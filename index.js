@@ -1,17 +1,20 @@
 const GAMES = [
     {
         name: "click_speed",
-        column: 0
+        column: 0,
+        order: 0
     },
 
     {
         name: "reaction_time",
-        column: 0
+        column: 0,
+        order: 1
     },
 
     {
         name: "tetris",
-        column: 1
+        column: 1,
+        order: 0
     }
 ];
 
@@ -46,11 +49,25 @@ async function init() {
         );
 
 
+    const columns =
+        document.querySelectorAll(
+            "#games .game-column"
+        );
+
+
     try {
-        await Promise.all(
+        const gamePromises =
             GAMES.map(
-                loadGame
-            )
+                game =>
+                    loadGame(
+                        game,
+                        columns
+                    )
+            );
+
+
+        await Promise.all(
+            gamePromises
         );
 
 
@@ -82,11 +99,40 @@ async function init() {
 }
 
 
-async function loadGame(game) {
+async function loadGame(
+    game,
+    columns
+) {
     const {
         name,
         column
     } = game;
+
+
+    const targetColumn =
+        columns[column];
+
+
+    if (!targetColumn) {
+        throw new Error(
+            `Game "${name}" references invalid column ${column}.`
+        );
+    }
+
+
+    const gameContainer =
+        document.createElement(
+            "div"
+        );
+
+
+    gameContainer.className =
+        "game-slot";
+
+
+    targetColumn.appendChild(
+        gameContainer
+    );
 
 
     const gameRoot =
@@ -117,48 +163,38 @@ async function loadGame(game) {
         );
 
 
+    const htmlPromise =
+        loadHTML(
+            htmlURL
+        );
+
+
+    const cssPromise =
+        loadCSS(
+            cssURL
+        );
+
+
+    const modulePromise =
+        import(
+            jsURL.href
+        );
+
+
     const [
         html,
         ,
         gameModule
     ] =
         await Promise.all([
-            loadHTML(htmlURL),
-            loadCSS(cssURL),
-            import(jsURL.href)
+            htmlPromise,
+            cssPromise,
+            modulePromise
         ]);
 
 
-    const columns =
-        document.querySelectorAll(
-            "#games .game-column"
-        );
-
-
-    const targetColumn =
-        columns[column];
-
-
-    if (!targetColumn) {
-        throw new Error(
-            `Game "${name}" references invalid column ${column}.`
-        );
-    }
-
-
-    const container =
-        document.createElement(
-            "div"
-        );
-
-
-    container.innerHTML =
+    gameContainer.innerHTML =
         html;
-
-
-    targetColumn.appendChild(
-        container
-    );
 
 
     if (
@@ -172,7 +208,7 @@ async function loadGame(game) {
 
 
     gameModule.init(
-        container
+        gameContainer
     );
 }
 

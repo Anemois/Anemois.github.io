@@ -153,6 +153,11 @@ body {
 }
 
 
+.game-slot {
+    min-width: 0;
+}
+
+
 @media (max-width: 900px) {
     #games {
         grid-template-columns: 1fr;
