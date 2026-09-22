@@ -1,0 +1,70 @@
+<div id="tetris">
+
+    <div class="tetris-header">
+        <h2 class="tetris-title">Tetris</h2>
+    </div>
+
+    <div class="tetris-content">
+
+        <div class="tetris-board-container">
+            <canvas
+                id="tetris-board"
+                width="240"
+                height="480"
+                tabindex="0"
+            ></canvas>
+        </div>
+
+        <div class="tetris-sidebar">
+
+            <div class="tetris-stat">
+                <span>Highscore</span>
+                <strong id="tetris-highscore">0</strong>
+            </div>
+
+            <div class="tetris-stat">
+                <span>Score</span>
+                <strong id="tetris-score">0</strong>
+            </div>
+
+            <div class="tetris-stat">
+                <span>Lines</span>
+                <strong id="tetris-lines">0</strong>
+            </div>
+
+            <div class="tetris-stat">
+                <span>Level</span>
+                <strong id="tetris-level">1</strong>
+            </div>
+
+            <div class="tetris-next-title">
+                Next
+            </div>
+
+            <canvas
+                id="tetris-next"
+                class="tetris-preview"
+                width="96"
+                height="96"
+            ></canvas>
+
+            <div class="tetris-next-title">
+                Hold
+            </div>
+
+            <canvas
+                id="tetris-hold"
+                class="tetris-preview"
+                width="96"
+                height="96"
+            ></canvas>
+
+            <button id="tetris-restart">
+                New Game
+            </button>
+
+        </div>
+
+    </div>
+
+</div>

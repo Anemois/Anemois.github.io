@@ -1,0 +1,140 @@
+#speed {
+    position: relative;
+
+    width: 100%;
+    min-width: 0;
+
+    margin-top: 0;
+
+    padding: 30px;
+
+    box-sizing: border-box;
+
+    background: #141414;
+    border: 1px solid #374151;
+    border-radius: 15px;
+
+    color: white;
+    text-align: left;
+}
+
+#speed h2 {
+    margin: 0 0 10px 0;
+}
+
+#speed .speed-header {
+    display: flex;
+    align-items: baseline;
+    gap: 15px;
+}
+
+#speed .speed-title {
+    margin: 0 0 10px 0;
+
+    color: gray;
+
+    transition: color 0.2s ease;
+}
+
+#speed .highscore {
+    font-size: 14px;
+
+    color: #888;
+
+    opacity: 0;
+
+    transition: opacity 0.2s ease;
+}
+
+#speed:hover .speed-title {
+    color: white;
+}
+
+#speed:hover .highscore {
+    opacity: 1;
+}
+
+#speed .game-content {
+    width: 100%;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    gap: 8px;
+}
+
+#speed .click-box {
+    position: relative;
+    top: 8px;
+
+    background: #232323;
+    border: 2px solid white;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    color: white;
+    cursor: pointer;
+
+    border-radius: 15px;
+
+    transition: 0.2s;
+}
+
+#speed .click-box:hover {
+    transform: scale(1.02);
+}
+
+#speed .click-box:active {
+    transform: scale(0.95);
+}
+
+#speed .hover-appear {
+    opacity: 0;
+
+    transition: opacity 0.2s ease;
+}
+
+#speed:hover .hover-appear {
+    opacity: 1;
+}
+
+#speed .readonly {
+    user-select: none;
+    caret-color: transparent;
+}
+
+#speed #click {
+    flex: 1 1 auto;
+
+    width: 100%;
+    max-width: 320px;
+
+    min-width: 0;
+
+    height: auto;
+
+    aspect-ratio: 16 / 9;
+}
+
+#speed #time {
+    display: flex;
+    flex-direction: column;
+
+    gap: 8px;
+}
+
+#speed #time .click-box {
+    width: 32px;
+    height: 18px;
+
+    border-radius: 10px;
+
+    color: #c7c7c7;
+}
+
+#speed #time .click-box.selected {
+    color: white;
+}

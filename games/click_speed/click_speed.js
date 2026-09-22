@@ -1,19 +1,8 @@
-document.addEventListener("DOMContentLoaded", () => {
-    init();
-});
-
-
-function init() {
-
-    setupClickSpeedTest();
-}
-
-function setupClickSpeedTest() {
-    createTimeOptions()
-
-    const clickBox = document.getElementById("click");
-    const clickText = clickBox.querySelector("span");
-    const timeOptions = document.querySelectorAll("#time .click-box");
+export function init(container) {
+    const clickBox = container.querySelector("#click");
+    const clickText = clickBox.querySelector(".readonly");
+    const timeContainer = container.querySelector("#time");
+    const highscoreText = container.querySelector(".highscore");
 
     let selectedTime = 10;
     let clicks = 0;
@@ -23,22 +12,29 @@ function setupClickSpeedTest() {
     let running = false;
     let cooldown = false;
 
+    createTimeOptions();
+    updateHighscore();
+
+    const timeOptions = timeContainer.querySelectorAll(".click-box");
+
     timeOptions.forEach(box => {
         box.addEventListener("click", () => {
             if (running || cooldown) {
                 return;
             }
 
-            selectedTime = Number(box.textContent);
+            selectedTime = Number(box.dataset.time);
 
             timeOptions.forEach(option => {
                 option.classList.remove("selected");
             });
 
             box.classList.add("selected");
+
+            updateHighscore();
         });
 
-        if(box.dataset.time == selectedTime){
+        if (Number(box.dataset.time) === selectedTime) {
             box.classList.add("selected");
         }
     });
@@ -58,41 +54,39 @@ function setupClickSpeedTest() {
     function createTimeOptions() {
         const times = [1, 5, 10, 20, 30, 60];
 
-        const timeContainer = document.getElementById("time");
-
         times.forEach(time => {
             const box = document.createElement("div");
 
             box.classList.add("click-box", "hover-appear");
+
             box.dataset.time = time;
-            box.style.width = "32px"
-            box.style.height = "18px"
-            box.style.borderRadius = "10px"
 
             const text = document.createElement("span");
+
             text.classList.add("readonly");
             text.textContent = time;
 
             box.appendChild(text);
-            timeContainer.appendChild(box);
 
-            box.addEventListener("click", () => {
-                console.log(`Selected ${time} seconds`);
-            });
+            timeContainer.appendChild(box);
         });
     }
 
     function startGame() {
         running = true;
+
         clicks = 1;
+
         startTime = performance.now();
 
-        clickText.textContent = "0.00s | 1";
+        clickText.textContent =
+            `0.00s | 1`;
 
         timer = setInterval(() => {
             updateDisplay();
 
-            const elapsed = (performance.now() - startTime) / 1000;
+            const elapsed =
+                (performance.now() - startTime) / 1000;
 
             if (elapsed >= selectedTime) {
                 endGame();
@@ -101,8 +95,11 @@ function setupClickSpeedTest() {
     }
 
     function updateDisplay() {
-        const elapsed = (performance.now() - startTime) / 1000;
-        const remaining = Math.max(0, selectedTime - elapsed);
+        const elapsed =
+            (performance.now() - startTime) / 1000;
+
+        const remaining =
+            Math.max(0, selectedTime - elapsed);
 
         clickText.textContent =
             `${remaining.toFixed(2)}s | ${clicks}`;
@@ -110,6 +107,7 @@ function setupClickSpeedTest() {
 
     function endGame() {
         clearInterval(timer);
+
         timer = null;
 
         running = false;
@@ -120,11 +118,49 @@ function setupClickSpeedTest() {
         clickText.textContent =
             `${clicks} clicks | ${cps.toFixed(2)} CPS`;
 
-        // Prevent restarting for 2 seconds
+        saveHighscore(cps);
+
         setTimeout(() => {
             cooldown = false;
 
-            clickText.textContent = "Click To Start";
+            clickText.textContent =
+                "Click To Start";
         }, 2000);
+    }
+
+    function getStorageKey() {
+        return `click-speed-highscore-${selectedTime}`;
+    }
+
+    function getHighscore() {
+        const saved = localStorage.getItem(
+            getStorageKey()
+        );
+
+        if (saved === null) {
+            return 0;
+        }
+
+        return Number(saved);
+    }
+
+    function saveHighscore(cps) {
+        const currentHighscore = getHighscore();
+
+        if (cps > currentHighscore) {
+            localStorage.setItem(
+                getStorageKey(),
+                cps.toString()
+            );
+
+            updateHighscore();
+        }
+    }
+
+    function updateHighscore() {
+        const highscore = getHighscore();
+
+        highscoreText.textContent =
+            `Highscore: ${highscore.toFixed(2)} CPS`;
     }
 }

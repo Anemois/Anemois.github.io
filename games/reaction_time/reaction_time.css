@@ -1,0 +1,175 @@
+#reaction {
+    position: relative;
+
+    width: 100%;
+    min-width: 0;
+
+    margin-top: 0;
+    padding: 30px;
+
+    box-sizing: border-box;
+
+    background: #141414;
+    border: 1px solid #374151;
+    border-radius: 15px;
+
+    color: white;
+    text-align: left;
+}
+
+
+/* Header */
+
+#reaction .reaction-header {
+    display: flex;
+    align-items: baseline;
+    gap: 15px;
+}
+
+#reaction .reaction-title {
+    margin: 0 0 10px 0;
+
+    color: gray;
+
+    transition: color 0.2s ease;
+}
+
+#reaction:hover .reaction-title {
+    color: white;
+}
+
+#reaction #reaction-highscore {
+    font-size: 13px;
+    color: #888;
+
+    opacity: 0;
+
+    transition: opacity 0.2s ease;
+}
+
+#reaction:hover #reaction-highscore {
+    opacity: 1;
+}
+
+
+/* Game content */
+
+#reaction .reaction-content {
+    width: 100%;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    margin-top: 8px;
+}
+
+
+/* Reaction click box */
+
+#reaction #reaction-click {
+    position: relative;
+
+    width: 100%;
+    max-width: 320px;
+
+    height: auto;
+    aspect-ratio: 16 / 9;
+
+    box-sizing: border-box;
+
+    background: #232323;
+    border: 2px solid white;
+    border-radius: 15px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    color: white;
+    cursor: pointer;
+
+    user-select: none;
+    caret-color: transparent;
+
+    transition:
+        opacity 0.2s ease,
+        transform 0.2s ease,
+        background 0.15s ease;
+}
+
+
+/* Hover */
+
+#reaction #reaction-click:hover {
+    transform: scale(1.02);
+}
+
+
+/* Click animation */
+
+#reaction #reaction-click:active {
+    transform: scale(0.95);
+}
+
+
+/* Hide game until card is hovered */
+
+#reaction .hover-appear {
+    opacity: 0;
+}
+
+#reaction:hover .hover-appear {
+    opacity: 1;
+}
+
+
+/* Text */
+
+#reaction #reaction-click .readonly {
+    display: block;
+
+    width: 100%;
+
+    text-align: center;
+
+    user-select: none;
+    caret-color: transparent;
+}
+
+
+/* Ready state */
+
+#reaction #reaction-click.reaction-ready {
+    background: #232323;
+    border: 2px solid white;
+
+    color: white;
+}
+
+
+/* CLICK state */
+
+#reaction #reaction-click.reaction-go {
+    background: #ffffff;
+    border: 2px solid white;
+
+    color: #000000;
+}
+
+
+/* Result */
+
+#reaction #reaction-click.reaction-result {
+    background: #232323;
+    border: 2px solid white;
+
+    color: white;
+}
+
+#reaction #reaction-click.reaction-false-start {
+    background: #232323;
+    border: 2px solid white;
+
+    color: white;
+}
