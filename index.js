@@ -3,15 +3,24 @@ const GAMES = [
         name: "click_speed",
         column: 0
     },
+
     {
         name: "reaction_time",
         column: 0
     },
+
     {
         name: "tetris",
         column: 1
     }
 ];
+
+
+const GAME_ROOT =
+    new URL(
+        "./games/",
+        import.meta.url
+    );
 
 
 document.addEventListener(
@@ -22,13 +31,19 @@ document.addEventListener(
 
 async function init() {
     const games =
-        document.querySelector("#games");
+        document.querySelector(
+            "#games"
+        );
 
     const loading =
-        document.querySelector("#games-loading");
+        document.querySelector(
+            "#games-loading"
+        );
 
     const wrapper =
-        document.querySelector("#games-wrapper");
+        document.querySelector(
+            "#games-wrapper"
+        );
 
 
     try {
@@ -52,6 +67,15 @@ async function init() {
             error
         );
 
+
+        games.classList.remove(
+            "loading"
+        );
+
+        wrapper.classList.add(
+            "error"
+        );
+
         loading.textContent =
             "Failed to load games.";
     }
@@ -65,28 +89,32 @@ async function loadGame(game) {
     } = game;
 
 
-    const gamePath =
-        `games/${name}`;
+    const gameRoot =
+        new URL(
+            `${name}/`,
+            GAME_ROOT
+        );
 
 
-    const htmlPath =
-        `${gamePath}/${name}.html`;
-
-    const cssPath =
-        `${gamePath}/${name}.css`;
-
-    const jsPath =
-        `./${gamePath}/${name}.js`;
+    const htmlURL =
+        new URL(
+            `${name}.html`,
+            gameRoot
+        );
 
 
-    const htmlPromise =
-        loadHTML(htmlPath);
+    const cssURL =
+        new URL(
+            `${name}.css`,
+            gameRoot
+        );
 
-    const cssPromise =
-        loadCSS(cssPath);
 
-    const modulePromise =
-        import(jsPath);
+    const jsURL =
+        new URL(
+            `${name}.js`,
+            gameRoot
+        );
 
 
     const [
@@ -95,9 +123,9 @@ async function loadGame(game) {
         gameModule
     ] =
         await Promise.all([
-            htmlPromise,
-            cssPromise,
-            modulePromise
+            loadHTML(htmlURL),
+            loadCSS(cssURL),
+            import(jsURL.href)
         ]);
 
 
@@ -113,13 +141,15 @@ async function loadGame(game) {
 
     if (!targetColumn) {
         throw new Error(
-            `Game column ${column} does not exist`
+            `Game "${name}" references invalid column ${column}.`
         );
     }
 
 
     const container =
-        document.createElement("div");
+        document.createElement(
+            "div"
+        );
 
 
     container.innerHTML =
@@ -132,24 +162,29 @@ async function loadGame(game) {
 
 
     if (
-        typeof gameModule.init ===
+        typeof gameModule.init !==
         "function"
     ) {
-        gameModule.init(
-            container
+        throw new Error(
+            `Game "${name}" does not export init().`
         );
     }
+
+
+    gameModule.init(
+        container
+    );
 }
 
 
-async function loadHTML(path) {
+async function loadHTML(url) {
     const response =
-        await fetch(path);
+        await fetch(url);
 
 
     if (!response.ok) {
         throw new Error(
-            `Could not load ${path}`
+            `Could not load HTML: ${url.href} (${response.status})`
         );
     }
 
@@ -158,22 +193,9 @@ async function loadHTML(path) {
 }
 
 
-function loadCSS(path) {
+function loadCSS(url) {
     return new Promise(
         (resolve, reject) => {
-            const existing =
-                document.querySelector(
-                    `link[href="${path}"]`
-                );
-
-
-            if (existing) {
-                resolve();
-
-                return;
-            }
-
-
             const link =
                 document.createElement(
                     "link"
@@ -183,8 +205,9 @@ function loadCSS(path) {
             link.rel =
                 "stylesheet";
 
+
             link.href =
-                path;
+                url.href;
 
 
             link.onload =
@@ -195,7 +218,7 @@ function loadCSS(path) {
                 () => {
                     reject(
                         new Error(
-                            `Could not load ${path}`
+                            `Could not load CSS: ${url.href}`
                         )
                     );
                 };

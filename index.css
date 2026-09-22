@@ -129,7 +129,14 @@ body {
 #games-wrapper.ready #games-loading {
     opacity: 0;
 
-    pointer-events: none;
+    visibility: hidden;
+}
+
+
+/* ---------------- Error ---------------- */
+
+#games-wrapper.error #games-loading {
+    color: #ff7185;
 }
 
 
