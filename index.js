@@ -15,6 +15,12 @@ const GAMES = [
         name: "tetris",
         column: 1,
         order: 0
+    },
+
+    {
+        name: "anetan",
+        column: 1,
+        order: 1
     }
 ];
 

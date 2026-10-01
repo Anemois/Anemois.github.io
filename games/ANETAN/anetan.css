@@ -1,0 +1,146 @@
+#anetan {
+    position: relative;
+
+    width: 100%;
+    min-width: 0;
+
+    margin-top: 0;
+    padding: clamp(18px, 4vw, 30px);
+
+    box-sizing: border-box;
+
+    background: #141414;
+    border: 1px solid #374151;
+    border-radius: 15px;
+
+    color: white;
+    text-align: left;
+}
+
+
+#anetan .anetan-header {
+    display: flex;
+    align-items: baseline;
+    gap: 15px;
+}
+
+
+#anetan .anetan-title {
+    margin: 0;
+
+    color: gray;
+
+    font-size: clamp(18px, 2.5vw, 24px);
+    line-height: 1;
+
+    transition: color 0.2s ease;
+}
+
+
+#anetan:hover .anetan-title {
+    color: white;
+}
+
+
+#anetan #anetan-highscore {
+    font-size: 13px;
+    color: #888;
+
+    opacity: 0;
+
+    transition: opacity 0.2s ease;
+}
+
+
+#anetan:hover #anetan-highscore {
+    opacity: 1;
+}
+
+
+#anetan .anetan-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    width: 100%;
+
+    max-height: 0;
+    margin-top: 0;
+
+    opacity: 0;
+    overflow: hidden;
+
+    transition:
+        max-height 0.25s ease,
+        margin-top 0.2s ease,
+        opacity 0.2s ease;
+}
+
+
+#anetan:hover .anetan-content {
+    max-height: 650px;
+    margin-top: 16px;
+    opacity: 1;
+}
+
+
+#anetan .anetan-board-header {
+    display: flex;
+    justify-content: space-between;
+
+    width: min(100%, 360px);
+    margin-bottom: 8px;
+
+    color: #888;
+    font-size: 12px;
+    line-height: 1;
+
+    user-select: none;
+    caret-color: transparent;
+}
+
+
+#anetan .anetan-board-container {
+    width: min(100%, 360px);
+
+    background: #0b0b0b;
+    border: 2px solid white;
+    border-radius: 10px;
+
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+
+#anetan #anetan-board {
+    display: block;
+
+    width: 100%;
+    height: auto;
+
+    aspect-ratio: 2 / 3;
+
+    outline: none;
+    cursor: crosshair;
+
+    touch-action: none;
+    user-select: none;
+    caret-color: transparent;
+}
+
+
+@media (hover: none), (pointer: coarse) {
+    #anetan .anetan-content {
+        max-height: 650px;
+        margin-top: 16px;
+        opacity: 1;
+    }
+
+    #anetan #anetan-highscore {
+        opacity: 1;
+    }
+
+    #anetan .anetan-title {
+        color: white;
+    }
+}
