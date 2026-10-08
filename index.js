@@ -1,27 +1,39 @@
 const GAMES = [
-    {
-        name: "click_speed",
-        column: 0,
-        order: 0
-    },
 
     {
-        name: "reaction_time",
-        column: 0,
-        order: 1
+        name:"click_speed",
+        column:0,
+        order:0
     },
 
-    {
-        name: "tetris",
-        column: 1,
-        order: 0
-    },
 
     {
-        name: "anetan",
-        column: 1,
-        order: 1
+        name:"reaction_time",
+        column:0,
+        order:1
+    },
+
+
+    {
+        name:"tetris",
+        column:1,
+        order:0
+    },
+
+
+    {
+        name:"anetan",
+        column:1,
+        order:1
+    },
+
+
+    {
+        name:"anefk",
+        full:true,
+        order:0
     }
+
 ];
 
 
@@ -38,16 +50,19 @@ document.addEventListener(
 );
 
 
-async function init() {
+async function init(){
+
     const games =
         document.querySelector(
             "#games"
         );
 
+
     const loading =
         document.querySelector(
             "#games-loading"
         );
+
 
     const wrapper =
         document.querySelector(
@@ -61,13 +76,21 @@ async function init() {
         );
 
 
-    try {
+    const fullContainer =
+        document.querySelector(
+            "#games-full"
+        );
+
+
+    try{
+
         const gamePromises =
             GAMES.map(
                 game =>
                     loadGame(
                         game,
-                        columns
+                        columns,
+                        fullContainer
                     )
             );
 
@@ -81,10 +104,16 @@ async function init() {
             "loading"
         );
 
+
         wrapper.classList.add(
             "ready"
         );
-    } catch (error) {
+
+
+    }
+
+    catch(error){
+
         console.error(
             "Failed to load games:",
             error
@@ -95,34 +124,57 @@ async function init() {
             "loading"
         );
 
+
         wrapper.classList.add(
             "error"
         );
 
+
         loading.textContent =
             "Failed to load games.";
+
     }
+
 }
 
 
 async function loadGame(
     game,
-    columns
-) {
+    columns,
+    fullContainer
+){
+
     const {
         name,
-        column
+        column,
+        full
     } = game;
 
 
-    const targetColumn =
-        columns[column];
+    let targetColumn;
 
 
-    if (!targetColumn) {
+    if(full){
+
+        targetColumn =
+            fullContainer;
+
+    }
+
+    else{
+
+        targetColumn =
+            columns[column];
+
+    }
+
+
+    if(!targetColumn){
+
         throw new Error(
-            `Game "${name}" references invalid column ${column}.`
+            `Game "${name}" has invalid placement.`
         );
+
     }
 
 
@@ -169,33 +221,25 @@ async function loadGame(
         );
 
 
-    const htmlPromise =
-        loadHTML(
-            htmlURL
-        );
-
-
-    const cssPromise =
-        loadCSS(
-            cssURL
-        );
-
-
-    const modulePromise =
-        import(
-            jsURL.href
-        );
-
-
     const [
         html,
         ,
         gameModule
     ] =
         await Promise.all([
-            htmlPromise,
-            cssPromise,
-            modulePromise
+
+            loadHTML(
+                htmlURL
+            ),
+
+            loadCSS(
+                cssURL
+            ),
+
+            import(
+                jsURL.href
+            )
+
         ]);
 
 
@@ -203,41 +247,50 @@ async function loadGame(
         html;
 
 
-    if (
+    if(
         typeof gameModule.init !==
         "function"
-    ) {
+    ){
+
         throw new Error(
             `Game "${name}" does not export init().`
         );
+
     }
 
 
     gameModule.init(
         gameContainer
     );
+
 }
 
 
-async function loadHTML(url) {
+async function loadHTML(url){
+
     const response =
         await fetch(url);
 
 
-    if (!response.ok) {
+    if(!response.ok){
+
         throw new Error(
-            `Could not load HTML: ${url.href} (${response.status})`
+            `Could not load HTML: ${url.href}`
         );
+
     }
 
 
     return response.text();
+
 }
 
 
-function loadCSS(url) {
+function loadCSS(url){
+
     return new Promise(
-        (resolve, reject) => {
+        (resolve,reject)=>{
+
             const link =
                 document.createElement(
                     "link"
@@ -257,18 +310,22 @@ function loadCSS(url) {
 
 
             link.onerror =
-                () => {
+                ()=>{
+
                     reject(
                         new Error(
                             `Could not load CSS: ${url.href}`
                         )
                     );
+
                 };
 
 
             document.head.appendChild(
                 link
             );
+
         }
     );
+
 }

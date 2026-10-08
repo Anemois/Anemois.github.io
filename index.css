@@ -1,5 +1,6 @@
 body {
-    margin: 0;
+
+    margin:0;
 
     font-family:
         Arial,
@@ -8,158 +9,222 @@ body {
 
     background-color:
         rgb(6, 6, 6);
+
 }
 
 
 .topbar {
-    height: 60px;
+
+    height:60px;
 
     background-color:
         rgb(22, 22, 22);
 
-    color: white;
+    color:white;
 
-    display: flex;
+    display:flex;
 
-    align-items: center;
-    justify-content: space-between;
+    align-items:center;
 
-    padding: 0 30px;
+    justify-content:space-between;
+
+    padding:0 30px;
+
 }
 
 
 .nav {
-    display: flex;
 
-    gap: 25px;
+    display:flex;
+
+    gap:25px;
+
 }
 
 
 .nav a {
-    color: white;
 
-    text-decoration: none;
+    color:white;
+
+    text-decoration:none;
+
 }
 
 
 .nav a:hover {
-    color: blanchedalmond;
+
+    color:blanchedalmond;
+
 }
 
 
 .funzone {
+
     width:
         min(1100px, 100%);
 
-    min-height: 1000px;
+    min-height:1000px;
 
-    padding: 30px;
+    padding:30px;
 
-    margin: 0 auto;
+    margin:0 auto;
 
-    box-sizing: border-box;
+    box-sizing:border-box;
 
-    color: white;
+    color:white;
 
-    text-align: left;
+    text-align:left;
+
 }
 
 
 /* ---------------- Games ---------------- */
 
 #games-wrapper {
-    position: relative;
 
-    min-height: 400px;
+    position:relative;
+
+    min-height:400px;
+
 }
 
 
 #games {
-    display: grid;
+
+    display:grid;
 
     grid-template-columns:
         minmax(0, 1fr)
         minmax(0, 1fr);
 
-    gap: 24px;
+    gap:24px;
 
-    align-items: start;
+    align-items:start;
 
-    opacity: 1;
+    opacity:1;
 
-    visibility: visible;
+    visibility:visible;
 
     transition:
         opacity 0.2s ease;
+
 }
 
 
 #games.loading {
-    opacity: 0;
 
-    visibility: hidden;
+    opacity:0;
 
-    pointer-events: none;
+    visibility:hidden;
+
+    pointer-events:none;
+
+}
+
+
+/* ---------------- Full-width Game ---------------- */
+
+#games-full {
+
+    width:100%;
+
+    margin-top:24px;
+
+    opacity:0;
+
+    visibility:hidden;
+
+    pointer-events:none;
+
+    transition:
+        opacity 0.2s ease;
+
+}
+
+
+#games-wrapper.ready #games-full {
+
+    opacity:1;
+
+    visibility:visible;
+
+    pointer-events:auto;
+
 }
 
 
 /* ---------------- Loading ---------------- */
 
 #games-loading {
-    position: absolute;
 
-    inset: 0;
+    position:absolute;
 
-    display: flex;
+    inset:0;
 
-    align-items: center;
-    justify-content: center;
+    display:flex;
 
-    color: #888;
+    align-items:center;
 
-    font-size: 14px;
+    justify-content:center;
 
-    pointer-events: none;
+    color:#888;
+
+    font-size:14px;
+
+    pointer-events:none;
 
     transition:
         opacity 0.2s ease;
+
 }
 
 
 #games-wrapper.ready #games-loading {
-    opacity: 0;
 
-    visibility: hidden;
+    opacity:0;
+
+    visibility:hidden;
+
 }
 
 
 /* ---------------- Error ---------------- */
 
 #games-wrapper.error #games-loading {
-    color: #ff7185;
+
+    color:#ff7185;
+
 }
 
 
 /* ---------------- Columns ---------------- */
 
 .game-column {
-    display: flex;
 
-    flex-direction: column;
+    display:flex;
 
-    gap: 24px;
+    flex-direction:column;
 
-    min-width: 0;
+    gap:24px;
+
+    min-width:0;
+
 }
 
 
 .game-slot {
-    min-width: 0;
+
+    min-width:0;
+
 }
 
 
-@media (max-width: 900px) {
+@media (max-width:900px) {
+
     #games {
-        grid-template-columns: 1fr;
+
+        grid-template-columns:1fr;
+
     }
+
 }
