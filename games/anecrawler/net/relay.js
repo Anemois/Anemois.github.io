@@ -1,17 +1,29 @@
-// Playing together through the game server (server/server.js).
+import {direct} from "./p2p.js";
+
+
+// Playing together, introduced by the game server (server/server.js).
 //
 // The host opens a room and gets a short code; friends join with the code.
-// The server only passes messages along, so each guest still looks, to the
-// game, like a direct line to the host: an "end" with
+// The server then introduces each guest's browser to the host's, and they
+// open a direct line (p2p.js); the game itself goes over that line. Until
+// it is open, or if a network will not let one through, the server passes
+// the game's messages along instead. Either way, each guest looks to the
+// game like one line to the host: an "end" with
 //
 //   end.send(message)     end.onMessage = fn     end.onClose = fn     end.close()
 //
 // (the same shape transport.js uses for its in-memory test pair).
+//
+// Through the server, game messages travel as ">ID json" (host to guest ID)
+// and "^json" (guest to host), and arrive as "<json" / ".ID json"; the
+// server passes them on without reading them.
 
 const ATTEMPT_MS = 12000;        // one connection attempt
 const WAKE_MS = 75000;          // a sleeping free server takes about a minute to wake
 const RETRY_MS = 2500;
-const KEEP_ALIVE_MS = 60000;    // a word now and then, so an idle room's server stays awake
+const KEEP_ALIVE_MS = 60000;    // a word now and then, so the connection stays open
+const WAKE_EVERY_MS = 8 * 60000;    // a free server sleeps after 15 quiet minutes: a host's room keeps it up
+const BUSY = 256 * 1024;        // bytes waiting to go out before the line counts as busy
 
 
 // The server's plain web address (for waking it up): wss://x/ws -> https://x/health
@@ -125,6 +137,23 @@ function keepAlive(socket){
 }
 
 
+// a message from the server; anything unreadable is ignored
+function read(text){
+
+    try{
+
+        return JSON.parse(text);
+
+    }
+    catch{
+
+        return null;
+
+    }
+
+}
+
+
 const say = (socket, message) => {
 
     if(socket.readyState === WebSocket.OPEN)
@@ -141,11 +170,11 @@ function answer(socket, want){
 
         socket.onmessage = ({data}) => {
 
-            const message = JSON.parse(data);
+            const message = read(data);
 
-            if(message.t === want)
+            if(message?.t === want)
                 resolve(message);
-            else if(message.t === "error")
+            else if(message?.t === "error")
                 reject(new Error(message.reason));
 
         };
@@ -157,12 +186,18 @@ function answer(socket, want){
 }
 
 
-function makeEnd(post, hangUp){
+function makeEnd(socket, post, hangUp){
 
     const end = {
         open: true,
         onMessage: null,
         onClose: null,
+
+        get busy(){
+
+            return socket.bufferedAmount > BUSY;
+
+        },
 
         send(message){
 
@@ -204,31 +239,57 @@ function lost(end){
 /* ---------------- Host ---------------- */
 
 // Opens a room. onGuest(end) is called for each player who joins;
-// onClose(reason) if the connection to the server is lost; onWaiting() if
-// the server has to wake up first. Resolves to {code, close()}.
+// onClose(reason) if the connection to the server is lost (guests on a
+// direct line stay; nobody new can join); onWaiting() if the server has to
+// wake up first. Resolves to {code, close()}.
 export async function hostRoom(url, {game, onGuest, onClose, onWaiting}){
 
     const socket = await connect(url, onWaiting);
     const ends = new Map();         // guest id -> end
 
-    say(socket, {t: "host", game});
+    say(socket, {t: "host", game, v: 2});
 
     const {code} = await answer(socket, "room");
 
     keepAlive(socket);
 
+    // a sleeping server would forget the room: keep it awake while it is open
+    const awake = setInterval(() => wake(url), WAKE_EVERY_MS);
+
+    socket.addEventListener("close", () => clearInterval(awake));
+
     socket.onmessage = ({data}) => {
 
-        const message = JSON.parse(data);
+        // a guest's game message: ".ID json"
+        if(data[0] === "."){
 
-        switch(message.t){
+            const space = data.indexOf(" ");
+
+            const message = read(data.slice(space + 1));
+
+            if(message)
+                ends.get(data.slice(1, space))?.onMessage?.(message);
+
+            return;
+
+        }
+
+        const message = read(data);
+
+        switch(message?.t){
 
             case "guest": {
 
                 const id = message.id;
 
                 const end = makeEnd(
-                    m => say(socket, {t: "to", id, m}),
+                    socket,
+                    m => {
+
+                        if(socket.readyState === WebSocket.OPEN)
+                            socket.send(">" + id + " " + JSON.stringify(m));
+
+                    },
                     () => {
 
                         ends.delete(id);
@@ -240,17 +301,11 @@ export async function hostRoom(url, {game, onGuest, onClose, onWaiting}){
 
                 ends.set(id, end);
 
-                onGuest(end);
+                onGuest(direct(end, {starts: true}));
 
                 break;
 
             }
-
-            case "from":
-
-                ends.get(message.id)?.onMessage?.(message.m);
-
-                break;
 
             case "left": {
 
@@ -300,34 +355,45 @@ export async function hostRoom(url, {game, onGuest, onClose, onWaiting}){
 
 /* ---------------- Guest ---------------- */
 
-// Joins the room with this code. Resolves to the end that talks to its host;
-// rejects with a reason anyone can read ("no game with that code"...).
+// Joins the room with this code. Resolves to the end that talks to its host
+// (directly once it can); rejects with a reason anyone can read ("no game
+// with that code"...).
 export async function joinRoom(url, code, {onWaiting} = {}){
 
     const socket = await connect(url, onWaiting);
 
-    say(socket, {t: "join", code});
+    say(socket, {t: "join", code, v: 2});
 
     await answer(socket, "joined");
 
     keepAlive(socket);
 
     const end = makeEnd(
-        m => say(socket, {t: "up", m}),
+        socket,
+        m => {
+
+            if(socket.readyState === WebSocket.OPEN)
+                socket.send("^" + JSON.stringify(m));
+
+        },
         () => socket.close(1000, "left")
     );
 
+    // the host's game messages: "<json"
     socket.onmessage = ({data}) => {
 
-        const message = JSON.parse(data);
+        if(data[0] !== "<")
+            return;
 
-        if(message.t === "down")
-            end.onMessage?.(message.m);
+        const message = read(data.slice(1));
+
+        if(message)
+            end.onMessage?.(message);
 
     };
 
     socket.onclose = () => lost(end);
 
-    return end;
+    return direct(end, {starts: false});
 
 }

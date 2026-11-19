@@ -16,6 +16,7 @@ import {
 } from "./data.js";
 
 import * as economy from "./economy.js";
+import {showSave, askSave} from "../../lib/savebox.js";
 import {createGame} from "./game.js";
 import {createRenderer, towerIcon} from "./render.js";
 import {createShop, createAmountPicker} from "./shop.js";
@@ -171,8 +172,9 @@ export function init(container){
 
     /* ---------------- Wiring ---------------- */
 
-    $(".td-export").onclick = () => prompt("Save code", encodeSave(save()));
-    $(".td-import").onclick = importSave;
+    // (a box in the game, not a browser popup: those leave full screen)
+    $(".td-export").onclick = () => showSave(root, encodeSave(save()));
+    $(".td-import").onclick = () => askSave(root, importSave);
     $(".td-open-sky").onclick = sky.open;
     ui.ascend.onclick = onAscendClick;
 
@@ -574,27 +576,10 @@ export function init(container){
     }
 
 
-    function importSave(){
+    // throws if the code cannot be read (the box says so)
+    function importSave(code){
 
-        const code = prompt("Import save (0 resets the game)");
-
-        if(!code)
-            return;
-
-        let next;
-
-        try{
-
-            next = code.trim() === "0" ? newSave() : decodeSave(code.trim());
-
-        }
-        catch{
-
-            alert("Invalid save");
-
-            return;
-
-        }
+        const next = code === "0" ? newSave() : decodeSave(code);
 
         disarmAscend();
 

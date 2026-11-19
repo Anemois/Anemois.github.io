@@ -9,7 +9,9 @@ import {weaponIcon} from "./view/sprites.js";
 import {createCase} from "./ui/case.js";
 import {createBag} from "./ui/bag.js";
 import {createCoop} from "./ui/coop.js";
+import {createVoteBar} from "./ui/vote.js";
 import {setText, duration} from "./util.js";
+import {showSave, askSave} from "../../lib/savebox.js";
 import {
     loadProfile, writeProfile, encodeProfile, decodeProfile, newProfile,
     addItem, loadoutItems, equip, upgrade, salvage, salvageCommons
@@ -93,6 +95,10 @@ export function init(container){
         onKey
     });
 
+    const voteBar = createVoteBar($(".ac-vote"), {
+        answer: agree => handle(session.send({type: "vote", agree}))
+    });
+
     const coop = createCoop($(".ac-coop"), {
         session: () => session,
         join: joinGame,
@@ -134,8 +140,8 @@ export function init(container){
     }
 
 
-    // A guest goes back to a world of their own. A host just carries on:
-    // their guests drop out as the room closes.
+    // A guest goes back to a world of their own. A host carries on in
+    // theirs, without the guests.
     function playAlone(){
 
         if(session.role === "guest"){
@@ -143,6 +149,11 @@ export function init(container){
             session.close();
 
             switchTo(newSession());
+
+        }
+        else{
+
+            session.close();
 
         }
 
@@ -524,6 +535,9 @@ export function init(container){
         if(lootCase.isOpen())
             return lootCase.key(event);
 
+        if(voteBar.key(event))
+            return true;
+
         if(event.code === "Escape"){
 
             setPaused(!paused);
@@ -545,36 +559,22 @@ export function init(container){
     $(".ac-resume").onclick = () => setPaused(false);
     $(".ac-summary-close").onclick = closeSummary;
 
+    // (a box in the game, not a browser popup: those leave full screen)
     $(".ac-export").onclick = () => {
 
         save();
 
-        prompt("Save code", encodeProfile(profile));
+        showSave(root, encodeProfile(profile));
 
     };
 
-    $(".ac-import").onclick = importSave;
+    $(".ac-import").onclick = () => askSave(root, importSave);
 
 
-    function importSave(){
+    // throws if the code cannot be read (the box says so)
+    function importSave(code){
 
-        const code = prompt("Import save (0 resets the game)");
-
-        if(code === null || code.trim() === "")
-            return;
-
-        try{
-
-            profile = code.trim() === "0" ? newProfile() : decodeProfile(code);
-
-        }
-        catch{
-
-            alert("That save code could not be read.");
-
-            return;
-
-        }
+        profile = code === "0" ? newProfile() : decodeProfile(code);
 
         save();
 
@@ -630,8 +630,9 @@ export function init(container){
         if(frameId || !session.online)
             return;
 
+        // (a hidden tab only ticks about once a second: make up all of it)
         const now = performance.now();
-        const dt = Math.min(0.25, (now - lastFrame) / 1000);
+        const dt = Math.min(1, (now - lastFrame) / 1000);
 
         lastFrame = now;
 
@@ -718,6 +719,8 @@ export function init(container){
         }
 
         renderer.draw(state(), {me: session.me, dt, aim});
+
+        voteBar.update(state(), session.me);
 
         if(now - lastPanel > PANEL_MS){
 

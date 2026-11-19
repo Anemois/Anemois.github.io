@@ -45,6 +45,17 @@ function migrate(data){
         stats: {...fresh.stats, ...data.stats}
     };
 
+    // numbers from an old or hand-edited save must still be numbers
+    const count = (value, otherwise) =>
+        Number.isFinite(value) && value >= 0 ? Math.floor(value) : otherwise;
+
+    profile.shards = count(profile.shards, 0);
+    profile.uid = count(profile.uid, 1);
+    profile.startFloor = Math.max(1, count(profile.startFloor, 1));
+
+    if(!Array.isArray(profile.loadout))
+        profile.loadout = [];
+
     profile.bag = profile.bag.filter(item => item && WEAPON[item.type] && Number.isFinite(item.uid));
 
     for(const item of profile.bag)

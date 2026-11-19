@@ -51,7 +51,8 @@ export function createEffects(){
                     key: stream ? `${event.id}:${event.kind}` : null
                 });
 
-                if(stream)
+                // (quiet: our own bullet, whose impact this screen already showed)
+                if(stream || event.quiet)
                     break;
 
                 if(event.angle !== null && event.angle !== undefined)
@@ -262,6 +263,13 @@ export function createEffects(){
 
                 fx.ring(event.x, event.y, 200, {colour: "#ff5c7a", life: 0.8, width: 4});
                 fx.shake(5);
+
+                break;
+
+            // someone was not ready to go through a portal yet
+            case "voteCancel":
+
+                banner("", `${event.pid === me ? "You" : event.name} said not yet`, {life: 1.8});
 
                 break;
 

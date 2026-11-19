@@ -3,9 +3,13 @@
 Lets people play the site's multiplayer games together (AneCrawler for now).
 
 One player hosts: the game runs in their browser, and this server gives them
-a short room code. Friends type the code into Join. From then on the server
-just passes messages between the host and the guests. It runs no game
-itself, so it needs very little: the smallest server plan anywhere is plenty.
+a short room code. Friends type the code into Join. The server then
+introduces each guest's browser to the host's, and they open a direct line
+to each other (WebRTC): the game itself does not go through the server.
+Only if a network will not let a direct line through (some strict office or
+phone networks) does the server pass the game's messages along instead. It
+runs no game itself, so it needs very little: the smallest server plan
+anywhere is plenty.
 
 Plain Node, nothing to install (Node 18 or newer).
 

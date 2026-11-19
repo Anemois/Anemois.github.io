@@ -603,6 +603,48 @@
 }
 
 
+/* ---------------- Group vote (portals) ---------------- */
+
+.ac-vote {
+    position:absolute;
+    top:52px;
+    left:50%;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:center;
+    gap:6px 12px;
+    width:max-content;
+    /* stays clear of your bars (left) and the map (right) */
+    max-width:max(280px, calc(100% - 356px));
+    padding:8px 12px;
+    background:rgba(20, 20, 20, 0.92);
+    border:1px solid #61a8ff;
+    border-radius:10px;
+    transform:translateX(-50%);
+    font-size:13px;
+}
+
+.ac-vote-text {
+    flex-basis:100%;
+    text-align:center;
+}
+
+.ac-vote-count {
+    color:#888;
+    font-size:12px;
+}
+
+.anecrawler .ac-vote button {
+    padding:4px 10px;
+    font-size:12px;
+}
+
+.anecrawler .ac-vote-yes {
+    border-color:#63d69f;
+}
+
+
 /* ---------------- Pause and run summary ---------------- */
 
 .ac-overlay-box {

@@ -54,3 +54,32 @@ export function createRng(seed){
 
 export const randomSeed = () =>
     Math.floor(Math.random() * 4294967296);
+
+
+// A random number in [0, 1) made only from the numbers given, the same on
+// every machine. Used where a guest's machine must guess exactly what the
+// host's will roll (the scatter of a shot, see combat.js).
+export function hash01(a, b, c = 0){
+
+    let x = Math.imul(a | 0, 0x9e3779b1) ^ Math.imul(b | 0, 0x85ebca77) ^ Math.imul(c | 0, 0xc2b2ae3d);
+
+    x = Math.imul(x ^ (x >>> 16), 0x7feb352d);
+    x = Math.imul(x ^ (x >>> 15), 0x846ca68b);
+    x ^= x >>> 16;
+
+    return (x >>> 0) / 4294967296;
+
+}
+
+
+// a whole number for a string (a player id), for hash01
+export function hashText(text){
+
+    let x = 2166136261;
+
+    for(let i = 0; i < text.length; i++)
+        x = Math.imul(x ^ text.charCodeAt(i), 16777619);
+
+    return x >>> 0;
+
+}

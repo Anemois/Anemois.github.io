@@ -43,10 +43,12 @@ function makeEnd(deliver, shut){
 
 // Two ends wired to each other in memory. With a delay, messages wait in a
 // queue until advance(ms) has moved time far enough: the tests use that to
-// play with lag.
-export function loopbackPair({delay = 0, jitter = 0, random = Math.random} = {}){
+// play with lag. Like the real lines (a WebSocket, an ordered data
+// channel), messages keep their order unless `ordered` is false.
+export function loopbackPair({delay = 0, jitter = 0, random = Math.random, ordered = true} = {}){
 
     const queue = [];
+    const last = new Map();             // per direction: when its latest message lands
 
     let now = 0;
     let a = null;
@@ -65,7 +67,14 @@ export function loopbackPair({delay = 0, jitter = 0, random = Math.random} = {})
 
         }
 
-        queue.push({at: now + delay + random() * jitter, to, copy});
+        let at = now + delay + random() * jitter;
+
+        if(ordered)
+            at = Math.max(at, last.get(to) ?? 0);
+
+        last.set(to, at);
+
+        queue.push({at, to, copy});
 
     };
 

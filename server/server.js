@@ -5,9 +5,11 @@ import {attach} from "./websocket.js";
 // The game server for the site's multiplayer games.
 //
 // It does not run any game. One player (the host) runs the game in their
-// browser; this server gives the host a short room code and passes messages
-// between the host and the players who join with that code. Everyone only
-// ever talks to this server, so it works on any network.
+// browser; this server gives the host a short room code and introduces the
+// players who join with that code: their browsers swap how to reach each
+// other through it, then talk directly (games/anecrawler/net/p2p.js). Only
+// when a network will not allow a direct line does this server pass the
+// game's messages along itself, so the game works on any network.
 //
 //   node server.js                 (Node 18 or newer, nothing to install)
 //
@@ -17,18 +19,22 @@ import {attach} from "./websocket.js";
 //                     "https://www.csie.ntu.edu.tw,https://example.com";
 //                     unset = any website may connect
 //
-// Messages are JSON text. From a client:
-//   {t: "host", game}                  open a room; answered {t: "room", code}
-//   {t: "join", code}                  join one; answered {t: "joined"} or {t: "error", reason}
-//   host:  {t: "to", id, m}            send m to one guest
-//          {t: "kick", id}             send a guest away
-//   guest: {t: "up", m}                send m to the host
-// From the server, besides the answers above:
-//   to the host:  {t: "guest", id}     someone joined
-//                 {t: "from", id, m}   a guest sent something
-//                 {t: "left", id}      a guest went away
-//   to a guest:   {t: "down", m}       the host sent something
+// Setting up is JSON text. From a client:
+//   {t: "host", game, v: 2}            open a room; answered {t: "room", code}
+//   {t: "join", code, v: 2}            join one; answered {t: "joined"} or {t: "error", reason}
+//   host:  {t: "kick", id}             send a guest away
+// From the server, besides the answers above, to the host:
+//   {t: "guest", id}                   someone joined
+//   {t: "left", id}                    a guest went away
 // When the host goes, the room closes and its guests are disconnected.
+//
+// Game messages are passed on untouched (the server never reads them, which
+// matters on a small server). Their first character says where they go:
+//   host -> server:  ">ID text"        to guest ID, who gets "<text"
+//   guest -> server: "^text"           to the host, who gets ".ID text"
+//
+// Older pages (without v: 2) send {t: "to", id, m} / {t: "up", m} and get
+// {t: "down", m} / {t: "from", id, m}; both kinds can share a room.
 
 const PORT = Number(process.env.PORT ?? 8787);
 
@@ -71,6 +77,13 @@ function newCode(){
 
 function send(conn, message){
 
+    sendText(conn, JSON.stringify(message));
+
+}
+
+
+function sendText(conn, text){
+
     if(conn.socket.backlog > MAX_BACKLOG){
 
         conn.socket.close(1008, "connection too slow");
@@ -79,7 +92,42 @@ function send(conn, message){
 
     }
 
-    conn.socket.send(JSON.stringify(message));
+    conn.socket.send(text);
+
+}
+
+
+// a game message for a guest, in whichever form their page speaks
+function toGuest(guest, text){
+
+    if(guest.v2)
+        sendText(guest, "<" + text);
+    else
+        sendOld(guest, "down", text, {});
+
+}
+
+
+function toHost(host, id, text){
+
+    if(host.v2)
+        sendText(host, "." + id + " " + text);
+    else
+        sendOld(host, "from", text, {id});
+
+}
+
+
+function sendOld(conn, t, text, extra){
+
+    try{
+
+        send(conn, {t, ...extra, m: JSON.parse(text)});
+
+    }
+    catch{
+        // not JSON: an old page could not read it anyway
+    }
 
 }
 
@@ -192,6 +240,30 @@ function receive(conn, text){
     if(++conn.count > RATE)
         return;
 
+    const room = conn.room;
+
+    // game messages: pass on without reading them
+    if(text[0] === ">"){
+
+        const space = text.indexOf(" ");
+        const guest = conn.role === "host" && space > 1 ? room?.guests.get(text.slice(1, space)) : null;
+
+        if(guest)
+            toGuest(guest, text.slice(space + 1));
+
+        return;
+
+    }
+
+    if(text[0] === "^"){
+
+        if(conn.role === "guest" && room)
+            toHost(room.host, conn.id, text.slice(1));
+
+        return;
+
+    }
+
     let message;
 
     try{
@@ -208,30 +280,39 @@ function receive(conn, text){
     if(!message || typeof message !== "object")
         return;
 
-    const room = conn.room;
-
     switch(message.t){
 
         case "host":
 
-            if(!room)
+            if(!room){
+
+                conn.v2 = message.v === 2;
+
                 openRoom(conn, message.game);
+
+            }
 
             return;
 
         case "join":
 
-            if(!room)
+            if(!room){
+
+                conn.v2 = message.v === 2;
+
                 joinRoom(conn, message.code);
+
+            }
 
             return;
 
+        // the older form of game messages
         case "to": {
 
             const guest = conn.role === "host" ? room?.guests.get(message.id) : null;
 
             if(guest)
-                send(guest, {t: "down", m: message.m});
+                toGuest(guest, JSON.stringify(message.m));
 
             return;
 
@@ -256,7 +337,7 @@ function receive(conn, text){
         case "up":
 
             if(conn.role === "guest" && room)
-                send(room.host, {t: "from", id: conn.id, m: message.m});
+                toHost(room.host, conn.id, JSON.stringify(message.m));
 
             return;
 
@@ -299,7 +380,7 @@ const sockets = attach(server, {
 
     onConnection(socket){
 
-        const conn = {socket, role: null, room: null, id: null, windowStart: Date.now(), count: 0};
+        const conn = {socket, role: null, room: null, id: null, v2: false, windowStart: Date.now(), count: 0};
 
         socket.onMessage = text => receive(conn, text);
         socket.onClose = () => leave(conn);

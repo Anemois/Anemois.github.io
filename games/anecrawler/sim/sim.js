@@ -1,5 +1,5 @@
 import {STEP, TILE, PLAYER} from "./data.js";
-import {createRng, randomSeed} from "./rng.js";
+import {createRng, randomSeed, hashText} from "./rng.js";
 import {generateFloor, generateLobby} from "./mapgen.js";
 import {createGrid} from "./grid.js";
 import {createNav, updateNav} from "./nav.js";
@@ -27,6 +27,7 @@ import {populate, refreshLive, updateEnemies, makeDummy} from "./enemies.js";
 const INTERACT_RANGE = 46;
 const PORTAL_RANGE = 30;
 const RUN_OVER_DELAY = 1.6;
+const VOTE_TIME = 10;           // seconds to say "not yet" before the group goes anyway
 
 export const IDLE = {moveX: 0, moveY: 0, aimX: 0, aimY: 0, fire: false, dash: false, swap: false, interact: false};
 
@@ -57,7 +58,8 @@ export function createSim({seed = randomSeed()} = {}){
         events: [],
         run: null,
         overT: 0,
-        bossDown: null
+        bossDown: null,
+        vote: null              // {travel, from, ready: [ids], left} while players decide
     };
 
     enterLobby(state);
@@ -84,6 +86,8 @@ export function buildMap({seed, runs, floor, mode}){
 function setMap(state){
 
     const map = buildMap(state);
+
+    state.vote = null;
 
     state.map = map;
     state.grid = createGrid(map.w * TILE, map.h * TILE);
@@ -141,6 +145,8 @@ export function addPlayer(state, {id, name = "Player", loadout = []}){
         beam: null,
         beamT: 0,
         swing: null,
+        shots: 0,                   // shots fired, for the scatter of the next (see combat.js)
+        key: hashText(id),
         held: {...IDLE},
         dead: false,
         revive: 0,
@@ -186,9 +192,11 @@ function refill(p){
 }
 
 
-function resetHands(p){
+// a weapon change drops whatever the hands were doing (also used by a
+// guest's machine for its own guess, see net/predict.js)
+export function resetHands(p){
 
-    p.slot = Math.min(p.slot, Math.max(0, p.weapons.length - 1));
+    p.slot = Math.max(0, Math.min(p.slot, p.weapons.length - 1));
     p.reload = 0;
     p.burst = 0;
     p.charge = -1;
@@ -218,7 +226,10 @@ function placePlayers(state, players = state.players, offset = 0){
 }
 
 
-function updatePlayer(state, p, intent, dt){
+// `moves`: the inputs to walk by this step, in order. Usually just
+// [intent]; a guest's machine may send several at once (see net/host.js),
+// or none yet, in which case they stand still until their inputs arrive.
+function updatePlayer(state, p, intent, dt, moves = [intent]){
 
     const pressed = key => intent[key] && !p.held[key];
 
@@ -235,7 +246,6 @@ function updatePlayer(state, p, intent, dt){
     }
 
     p.hurt = Math.max(0, p.hurt - dt);
-    p.dashCd -= dt;
 
     // shield comes back a point at a time after a quiet spell
     p.shieldWait += dt;
@@ -273,19 +283,36 @@ function updatePlayer(state, p, intent, dt){
 
     }
 
-    move(state, p, intent, dt, pressed("dash"));
+    // Each input walks, swaps and uses the weapon for one step, in that
+    // order, exactly as a guest's machine guesses it (net/predict.js). A
+    // guest whose inputs are late does none of it until they arrive.
+    for(const m of moves){
 
-    if(pressed("swap") && p.weapons.length > 1){
+        p.aim = Math.atan2(m.aimY - p.y, m.aimX - p.x);
 
-        p.slot = 1 - p.slot;
+        if(movePlayer(state.map, p, m, dt, m.dash && !p.held.dash))
+            emit(state, "dash", {pid: p.id, x: p.x, y: p.y});
 
-        resetHands(p);
+        if(m.swap && !p.held.swap && p.weapons.length > 1){
 
-        emit(state, "swap", {pid: p.id});
+            p.slot = 1 - p.slot;
+
+            resetHands(p);
+
+            emit(state, "swap", {pid: p.id});
+
+        }
+
+        updateWeapon(state, p, m.fire, dt);
+
+        p.held.fire = m.fire;
+        p.held.dash = m.dash;
+        p.held.swap = m.swap;
 
     }
 
-    updateWeapon(state, p, intent.fire, dt);
+    if(!moves.length)
+        p.moving = false;
 
     const prop = nearestProp(state, p);
 
@@ -294,7 +321,8 @@ function updatePlayer(state, p, intent, dt){
     if(prop && pressed("interact"))
         interact(state, p, prop);
 
-    remember(p, intent);
+    // (the other buttons were followed input by input above)
+    p.held.interact = intent.interact;
 
 }
 
@@ -318,7 +346,10 @@ function waiting(p){
 }
 
 
-function move(state, p, intent, dt, dash){
+// One input's worth of walking (and dashing) for a player: the same code
+// runs on a guest's machine to predict their own movement, so it must only
+// depend on the map, the body and the input. Returns true if a dash began.
+export function movePlayer(map, p, intent, dt, dash){
 
     let mx = intent.moveX;
     let my = intent.moveY;
@@ -333,17 +364,20 @@ function move(state, p, intent, dt, dash){
     }
 
     p.moving = length > 0.1;
+    p.dashCd -= dt;
+
+    let dashed = false;
 
     if(dash && p.dashCd <= 0){
 
-        const angle = p.moving ? Math.atan2(my, mx) : p.aim;
+        const angle = p.moving ? Math.atan2(my, mx) : Math.atan2(intent.aimY - p.y, intent.aimX - p.x);
 
         p.dashX = Math.cos(angle);
         p.dashY = Math.sin(angle);
         p.dashT = PLAYER.dashTime;
         p.dashCd = PLAYER.dashCooldown;
 
-        emit(state, "dash", {pid: p.id, x: p.x, y: p.y});
+        dashed = true;
 
     }
 
@@ -351,14 +385,16 @@ function move(state, p, intent, dt, dash){
 
         p.dashT -= dt;
 
-        moveBody(state.map, p, p.dashX * PLAYER.dashSpeed * dt, p.dashY * PLAYER.dashSpeed * dt);
+        moveBody(map, p, p.dashX * PLAYER.dashSpeed * dt, p.dashY * PLAYER.dashSpeed * dt);
 
-        return;
+        return dashed;
 
     }
 
     if(p.moving)
-        moveBody(state.map, p, mx * PLAYER.speed * dt, my * PLAYER.speed * dt);
+        moveBody(map, p, mx * PLAYER.speed * dt, my * PLAYER.speed * dt);
+
+    return dashed;
 
 }
 
@@ -441,21 +477,81 @@ function interact(state, p, prop){
 
     }
 
-    if(prop.kind === "portal"){
+    if(prop.kind === "portal")
+        travel(state, p, {to: prop.target, floor: prop.floor ?? 1});
 
-        if(prop.target === "run")
-            startRun(state, {floor: prop.floor ?? 1});
-        else if(prop.target === "next")
-            loadFloor(state, state.floor + 1);
-        else if(prop.target === "home")
-            endRun(state, "home");
+}
+
+
+/* ---------------- Going somewhere together ---------------- */
+// Anything that moves everyone (a portal, starting or giving up a run) is
+// asked of the group first when there is more than one player. Everyone
+// ready: go now. Nobody says "not yet" within VOTE_TIME: go anyway. Anyone
+// says "not yet": nothing happens.
+//
+// trip: {to: "run" | "next" | "home" | "quit", floor (for "run")}
+
+function travel(state, p, trip){
+
+    if(state.players.length <= 1)
+        return go(state, trip);
+
+    const vote = state.vote;
+
+    if(vote){
+
+        // walking into the same portal counts as saying yes
+        if(vote.travel.to === trip.to && !vote.ready.includes(p.id))
+            vote.ready.push(p.id);
+
+        return;
 
     }
+
+    state.vote = {travel: trip, from: p.id, ready: [p.id], left: VOTE_TIME};
+
+    emit(state, "vote", {pid: p.id, to: trip.to});
+
+}
+
+
+function go(state, trip){
+
+    state.vote = null;
+
+    if(trip.to === "run")
+        startRun(state, {floor: trip.floor});
+    else if(trip.to === "next")
+        loadFloor(state, state.floor + 1);
+    else if(trip.to === "home")
+        endRun(state, "home");
+    else if(trip.to === "quit")
+        endRun(state, "quit");
+
+}
+
+
+function countVote(state, dt){
+
+    const vote = state.vote;
+
+    vote.left -= dt;
+
+    // people who left the game do not hold it up
+    vote.ready = vote.ready.filter(id => state.players.some(p => p.id === id));
+
+    if(vote.left <= 0 || state.players.every(p => vote.ready.includes(p.id)))
+        go(state, vote.travel);
 
 }
 
 
 /* ---------------- Commands ---------------- */
+
+// commands can come from another player's machine: a floor must be a floor
+const floorNumber = value =>
+    Number.isInteger(value) && value >= 1 ? Math.min(value, 999) : 1;
+
 
 export function command(state, pid, cmd){
 
@@ -502,14 +598,17 @@ export function command(state, pid, cmd){
         // the lobby loadout (what you hold is what you bring)
         case "loadout":
 
+            if(!Array.isArray(cmd.items))
+                return;
+
             p.loadout = cmd.items.slice(0, 2).map(({uid, type, level}) => ({uid, type, level}));
 
             if(state.mode === "lobby"){
 
                 p.weapons = p.loadout.map(item => ({...item}));
 
-                if(cmd.slot !== undefined)
-                    p.slot = Math.min(cmd.slot, p.weapons.length - 1);
+                if(Number.isInteger(cmd.slot))
+                    p.slot = cmd.slot;
 
                 resetHands(p);
 
@@ -520,7 +619,7 @@ export function command(state, pid, cmd){
         // which of the two weapons is in hand
         case "slot":
 
-            if(cmd.slot < p.weapons.length && cmd.slot !== p.slot){
+            if(Number.isInteger(cmd.slot) && cmd.slot >= 0 && cmd.slot < p.weapons.length && cmd.slot !== p.slot){
 
                 p.slot = cmd.slot;
 
@@ -533,23 +632,48 @@ export function command(state, pid, cmd){
         case "start":
 
             if(state.mode === "lobby")
-                startRun(state, {floor: cmd.floor ?? 1});
+                travel(state, p, {to: "run", floor: floorNumber(cmd.floor)});
 
             break;
 
         case "quit":
 
             if(state.mode === "run")
-                endRun(state, "quit");
+                travel(state, p, {to: "quit"});
 
             break;
+
+        // an answer to the group's question: agree true = ready, false = not yet
+        case "vote": {
+
+            const vote = state.vote;
+
+            if(!vote)
+                return;
+
+            if(cmd.agree){
+
+                if(!vote.ready.includes(pid))
+                    vote.ready.push(pid);
+
+                return;
+
+            }
+
+            state.vote = null;
+
+            emit(state, "voteCancel", {pid, name: p.name, to: vote.travel.to});
+
+            break;
+
+        }
 
         // which floor the lobby portal leads to
         case "startFloor":
 
             for(const prop of state.props)
                 if(prop.kind === "portal" && prop.target === "run")
-                    prop.floor = cmd.floor;
+                    prop.floor = floorNumber(cmd.floor);
 
             break;
 
@@ -820,7 +944,9 @@ function collect(state, p, pk){
 
 /* ---------------- Step ---------------- */
 
-export function step(state, inputs = {}){
+// inputs: {[player id]: intent}; moves (optional): {[player id]: [intent, ...]}
+// for players whose walking comes in batches (guests, see net/host.js)
+export function step(state, inputs = {}, moves = {}){
 
     const dt = STEP;
 
@@ -832,8 +958,16 @@ export function step(state, inputs = {}){
 
     refreshLive(state);
 
-    for(const p of state.players)
-        updatePlayer(state, p, inputs[p.id] ?? waiting(p), dt);
+    for(const p of state.players){
+
+        const intent = inputs[p.id] ?? waiting(p);
+
+        updatePlayer(state, p, intent, dt, moves[p.id] ?? [intent]);
+
+    }
+
+    if(state.vote)
+        countVote(state, dt);
 
     updateNav(state);
     updateEnemies(state, dt);

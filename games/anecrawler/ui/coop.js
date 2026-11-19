@@ -111,12 +111,18 @@ export function createCoop(element, hooks){
                 game: "anecrawler",
                 onGuest: end => hooks.session().accept(end),
 
-                // the server went away: everyone else is gone, play on alone
+                // The server went away. Guests on a direct line can stay
+                // (nobody new can join); otherwise play on alone.
                 onClose: reason => {
 
                     room = null;
 
-                    if(mode === "hosting")
+                    if(mode !== "hosting")
+                        return;
+
+                    if((hooks.session().players ?? 1) > 1)
+                        settle("hosting", "lost the game server, so nobody new can join");
+                    else
                         settle("solo", reason);
 
                 },
@@ -237,9 +243,35 @@ export function createCoop(element, hooks){
         }[mode];
 
         // once someone has joined, the reminder to share the code can go
-        const shown = mode === "hosting" && players > 1 ? "" : note;
+        const shown = mode === "hosting" && players > 1 && room ? "" : note;
 
-        setText(status, [text, shown].filter(Boolean).join(" · "));
+        setText(status, [text, line(), shown].filter(Boolean).join(" · "));
+
+    }
+
+
+    // how the others are connected: straight to each other, or through
+    // the server (while a direct line is being set up, or if a network
+    // will not allow one)
+    function line(){
+
+        if(mode !== "hosting" && mode !== "guest")
+            return "";
+
+        const routes = hooks.session().routes ?? [];
+
+        if(!routes.length)
+            return "";
+
+        const direct = routes.filter(route => route === "direct").length;
+
+        if(direct === routes.length)
+            return "direct";
+
+        if(direct === 0)
+            return "through the server";
+
+        return `${direct} direct, ${routes.length - direct} through the server`;
 
     }
 

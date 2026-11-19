@@ -9,21 +9,24 @@ export const rarityOf = item =>
 
 
 // Stats of one item; lobby weapons are free to fire. Worked out once per
-// item and level, then reused: treat the result as read-only.
-const statsCache = new WeakMap();
+// type and level, then reused (items are often fresh copies of the same
+// weapon, e.g. on a guest's machine): treat the result as read-only.
+const statsCache = new Map();
 
 export function weaponStats(item, free = false){
 
-    let entry = statsCache.get(item);
+    const key = item.type + "|" + item.level;
 
-    if(!entry || entry.level !== item.level || entry.type !== item.type){
+    let entry = statsCache.get(key);
+
+    if(!entry){
 
         const def = WEAPON[item.type];
         const paid = {...def, dmg: def.dmg * LEVEL_DAMAGE ** (item.level - 1)};
 
-        entry = {type: item.type, level: item.level, paid, free: {...paid, energy: 0}};
+        entry = {paid, free: {...paid, energy: 0}};
 
-        statsCache.set(item, entry);
+        statsCache.set(key, entry);
 
     }
 

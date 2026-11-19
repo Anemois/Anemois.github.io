@@ -3,6 +3,7 @@ import {solidAt, tileAt, CRATE} from "./map.js";
 import {weaponStats} from "./loot.js";
 import {near} from "./grid.js";
 import {DEG, angleDiff, castRay, segmentDistance, clamp} from "./physics.js";
+import {hash01} from "./rng.js";
 import {
     emit, newId, isActive, nearestEnemy,
     damageEnemy, damagePlayer, explode, smashCrate
@@ -10,9 +11,10 @@ import {
 
 
 const BEAM_TICK = 0.1;          // beams hurt ten times a second
-const SWING_TIME = 0.16;        // a swing deflects bullets for this long
+export const SWING_TIME = 0.16; // a swing deflects bullets for this long
+export const MUZZLE = 12;       // bullets start this far past the body's edge
 const CHAIN_RANGE = 150;
-const HOMING_RANGE = 280;
+export const HOMING_RANGE = 280;
 const PULL_SPEED = 80;
 
 // result lists for grid lookups, one per place that loops while dealing
@@ -20,11 +22,13 @@ const PULL_SPEED = 80;
 const swingList = [];
 const bulletList = [];
 const lineList = [];
+const pellets = [];
 
 
 /* ---------------- Player weapons ---------------- */
 
-// Uses the held weapon. `fire` is whether the trigger is down this step.
+// Uses the held weapon for one input's worth of time. `fire` is whether
+// the trigger is down.
 export function updateWeapon(state, p, fire, dt){
 
     p.reload -= dt;
@@ -52,6 +56,27 @@ export function updateWeapon(state, p, fire, dt){
 
     const s = weaponStats(item, state.mode === "lobby");
 
+    trigger(p, s, fire, dt, {
+        pay: cost => spend(state, p, cost),
+        shoot: () => shoot(state, p, s),
+        swing: () => swing(state, p, s),
+        release: power => release(state, p, s, power),
+        beam: () => beam(state, p, s, dt)
+    });
+
+}
+
+
+// When a weapon goes off: reloading, bursts, charging and energy. Only
+// timing lives here; what going off does is `act`'s business:
+//   act.pay(cost) -> bool    act.shoot()    act.swing()
+//   act.release(power)       act.beam()
+// A guest's machine runs this same function for its own player with
+// harmless stand-ins (net/predict.js), so shots show the moment the trigger
+// is pulled and still match what the host decides. `p` needs reload,
+// burst, burstT, charge and beam.
+export function trigger(p, s, fire, dt, act){
+
     // the rest of a burst
     if(p.burst > 0){
 
@@ -59,7 +84,7 @@ export function updateWeapon(state, p, fire, dt){
 
         if(p.burstT <= 0){
 
-            shoot(state, p, s);
+            act.shoot();
 
             p.burst--;
             p.burstT = s.burstGap;
@@ -75,11 +100,11 @@ export function updateWeapon(state, p, fire, dt){
 
         case "gun":
 
-            if(fire && p.reload <= 0 && p.burst === 0 && spend(state, p, s.energy)){
+            if(fire && p.reload <= 0 && p.burst === 0 && act.pay(s.energy)){
 
                 p.reload = 1 / s.rate;
 
-                shoot(state, p, s);
+                act.shoot();
 
                 if(s.burst){
 
@@ -94,11 +119,11 @@ export function updateWeapon(state, p, fire, dt){
 
         case "melee":
 
-            if(fire && p.reload <= 0 && spend(state, p, s.energy)){
+            if(fire && p.reload <= 0 && act.pay(s.energy)){
 
                 p.reload = 1 / s.rate;
 
-                swing(state, p, s);
+                act.swing();
 
             }
 
@@ -113,11 +138,11 @@ export function updateWeapon(state, p, fire, dt){
             }
             else if(!fire && p.charge >= 0){
 
-                if(p.charge >= s.minCharge && spend(state, p, s.energy)){
+                if(p.charge >= s.minCharge && act.pay(s.energy)){
 
                     p.reload = 1 / s.rate;
 
-                    release(state, p, s, p.charge / s.charge);
+                    act.release(p.charge / s.charge);
 
                 }
 
@@ -129,14 +154,39 @@ export function updateWeapon(state, p, fire, dt){
 
         case "beam":
 
-            if(fire && spend(state, p, s.energy * dt))
-                beam(state, p, s, dt);
+            if(fire && act.pay(s.energy * dt))
+                act.beam();
             else
                 p.beam = null;
 
             break;
 
     }
+
+}
+
+
+// Where the pellets of one shot go, in radians from the aim. The scatter
+// comes from the player and how many shots they have fired, not from the
+// world's dice, so a guest's machine can draw the very same pellets the
+// moment it fires (see net/predict.js).
+export function pelletAngles(s, key, shots, out = []){
+
+    const count = s.count ?? 1;
+    const spread = s.spread ?? 0;
+
+    out.length = 0;
+
+    for(let i = 0; i < count; i++){
+
+        const fan = count > 1 ? (i / (count - 1) - 0.5) * spread : 0;
+        const jitter = (hash01(key, shots, i) - 0.5) * (count > 1 ? spread * 0.2 : spread);
+
+        out.push((fan + jitter) * DEG);
+
+    }
+
+    return out;
 
 }
 
@@ -166,7 +216,7 @@ function spend(state, p, cost){
 // a bullet is plain data; how it looks comes from its weapon (see render)
 function playerBullet(state, p, s, angle, extra){
 
-    const muzzle = p.r + 12;
+    const muzzle = p.r + MUZZLE;
 
     const bullet = {
         id: newId(state),
@@ -222,18 +272,10 @@ function shotEvent(state, p, s, power){
 
 function shoot(state, p, s){
 
-    const count = s.count ?? 1;
-    const spread = s.spread ?? 0;
-    const rng = state.rng;
+    p.shots++;
 
-    for(let i = 0; i < count; i++){
-
-        const fan = count > 1 ? (i / (count - 1) - 0.5) * spread : 0;
-        const jitter = rng.range(-0.5, 0.5) * (count > 1 ? spread * 0.2 : spread);
-
-        playerBullet(state, p, s, p.aim + (fan + jitter) * DEG);
-
-    }
+    for(const offset of pelletAngles(s, p.key, p.shots, pellets))
+        playerBullet(state, p, s, p.aim + offset);
 
     shotEvent(state, p, s);
 
@@ -286,7 +328,7 @@ function swing(state, p, s){
 
         }
 
-        emit(state, "shock", {x, y, r: s.shock, weapon: s.id});
+        emit(state, "shock", {pid: p.id, x, y, r: s.shock, weapon: s.id});
 
     }
 
@@ -564,7 +606,7 @@ function moveBullet(state, b, dt){
         b.dead = true;
 
         if(b.explode)
-            explode(state, b.x, b.y, b.explode, b.dmg, {pid: b.pid, crit: b.crit});
+            explode(state, b.x, b.y, b.explode, b.dmg, {pid: b.pid, crit: b.crit, shot: true});
 
         return;
 
@@ -631,7 +673,7 @@ function hitWall(state, b, ox, oy){
         b.bounce--;
         b.hits = null;
 
-        emit(state, "spark", {x: ox, y: oy, angle, weapon: b.weapon, tint: b.tint});
+        emit(state, "spark", {pid: b.pid, shot: b.team === "p" || undefined, x: ox, y: oy, angle, weapon: b.weapon, tint: b.tint});
 
         return false;
 
@@ -640,9 +682,9 @@ function hitWall(state, b, ox, oy){
     b.dead = true;
 
     if(b.explode)
-        explode(state, ox, oy, b.explode, b.dmg, {pid: b.pid, crit: b.crit});
+        explode(state, ox, oy, b.explode, b.dmg, {pid: b.pid, crit: b.crit, shot: true});
     else
-        emit(state, "spark", {x: ox, y: oy, angle, weapon: b.weapon, tint: b.tint});
+        emit(state, "spark", {pid: b.pid, shot: b.team === "p" || undefined, x: ox, y: oy, angle, weapon: b.weapon, tint: b.tint});
 
     return true;
 
@@ -689,13 +731,13 @@ function hitEnemies(state, b, dt){
 
             b.dead = true;
 
-            explode(state, b.x, b.y, b.explode, b.dmg, {pid: b.pid, crit: b.crit});
+            explode(state, b.x, b.y, b.explode, b.dmg, {pid: b.pid, crit: b.crit, shot: true});
 
             return;
 
         }
 
-        damageEnemy(state, e, b.dmg, {pid: b.pid, crit: b.crit, knock: Math.atan2(b.vy, b.vx), push: 60});
+        damageEnemy(state, e, b.dmg, {pid: b.pid, crit: b.crit, knock: Math.atan2(b.vy, b.vx), push: 60, shot: !b.tick});
 
         if(b.slow){
 

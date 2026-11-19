@@ -154,7 +154,8 @@ export function damagePlayer(state, p, amount){
 // Hurts an enemy. `crit` is a chance; `knock` an angle to push it along.
 // Sleeping enemies wake up (and the blow that wakes them always crits).
 // Dummies keep a log instead of losing health.
-export function damageEnemy(state, e, amount, {pid = null, crit = 0, knock = null, push = 90, kind = "hit"} = {}){
+// `shot`: a bullet's own hit (a guest's machine already showed the impact)
+export function damageEnemy(state, e, amount, {pid = null, crit = 0, knock = null, push = 90, kind = "hit", shot = false} = {}){
 
     if(!isActive(e))
         return false;
@@ -165,7 +166,8 @@ export function damageEnemy(state, e, amount, {pid = null, crit = 0, knock = nul
 
     e.flash = 0.08;
 
-    emit(state, "hit", {id: e.id, x: e.x, y: e.y, r: e.r, dmg, crit: critical, kind, angle: knock, color: e.color});
+    // (fields left undefined are left out of what is sent)
+    emit(state, "hit", {id: e.id, pid: pid ?? undefined, shot: shot || undefined, x: e.x, y: e.y, r: e.r, dmg, crit: critical, kind, angle: knock, color: e.color});
 
     const player = pid === null ? null : state.players.find(p => p.id === pid);
 
@@ -276,7 +278,8 @@ export const shardValue = state =>
 
 
 // area damage. team: "p" hurts enemies, "e" hurts players, "both" both
-export function explode(state, x, y, radius, dmg, {team = "p", pid = null, crit = 0, playerDmg = 2} = {}){
+// `shot`: a bullet's own blast (a guest's machine already showed it)
+export function explode(state, x, y, radius, dmg, {team = "p", pid = null, crit = 0, playerDmg = 2, shot = false} = {}){
 
     if(team !== "e"){
 
@@ -303,7 +306,7 @@ export function explode(state, x, y, radius, dmg, {team = "p", pid = null, crit 
 
     breakCrates(state, x, y, radius);
 
-    emit(state, "boom", {x, y, r: radius, team});
+    emit(state, "boom", {x, y, r: radius, team, pid: pid ?? undefined, shot: shot || undefined});
 
 }
 

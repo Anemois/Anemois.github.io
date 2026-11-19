@@ -1,7 +1,7 @@
 import {ENEMIES, BOSSES, ELITE, CHAMPION, WEAPONS, PLAYER, STEP} from "../sim/data.js";
 import {buildMap} from "../sim/sim.js";
 import {breakCrate} from "../sim/map.js";
-import {moveBody} from "../sim/physics.js";
+import {createPredictor} from "./predict.js";
 
 
 // What the host sends to each other player, and how their machine turns it
@@ -14,17 +14,27 @@ import {moveBody} from "../sim/physics.js";
 // same events the host's own screen uses.
 //
 // The receiving side (the mirror) keeps a world object shaped like the
-// real one, so the renderer cannot tell the difference. Between snapshots
-// it slides things from where they were to where they are now, lets
-// bullets fly on at their speed, and moves your own character at once
-// (prediction) while gently pulling it to where the host says you are.
+// real one, so the renderer cannot tell the difference.
+//
+// Everything but your own character is shown a short, steady moment in the
+// past, sliding between the two snapshots around that moment. Snapshots
+// never arrive perfectly evenly, so the mirror watches how uneven they are
+// and keeps just enough of them queued to always have the next one.
+//
+// Your own character (and what it fires) is shown ahead of all this, the
+// moment you press a key: see predict.js. The host says which input it has
+// reached and exactly how you stood then, and leaves your own bullets out
+// (your machine already drew them).
 
-export const SNAP_EVERY = 4;                    // steps between snapshots (15 a second)
+export const SNAP_EVERY = 2;                    // steps between snapshots (30 a second)
 
-const SNAP_TIME = SNAP_EVERY * STEP;
 const NEAR = 900;                               // how far around a player the host describes
-const PREDICT_SNAP = 90;                        // further off than this: jump to the host's position
-const PREDICT_PULL = 0.14;                      // otherwise close this much of the gap per snapshot
+const TICKS = 1 / STEP;                         // simulation steps a second
+const ARRIVALS = 60;                            // snapshot arrivals watched for unevenness (about 2 s)
+const MIN_DELAY = SNAP_EVERY + 1;               // steps behind the newest snapshot, at least
+const MAX_DELAY = 30;                           // ...and at most (half a second)
+const KEEP = 40;                                // snapshots remembered
+const SLIDE_LIMIT = 160;                        // anything moving further between snapshots jumps there
 
 const TYPES = [...Object.keys(ENEMIES), ...BOSSES.map(b => b.id), "dummy"];
 const MODES = ["move", "aim", "wind", "charge", "stun", "fuse", "blink", "swoop"];
@@ -35,8 +45,11 @@ const WEAPON_IDS = WEAPONS.map(w => w.id);
 const ELITE_BIT = 1, CHAMPION_BIT = 2, ASLEEP = 4, HIDDEN = 8, ENRAGED = 16,
     SLOWED = 32, BURNING = 64, FLASH = 128, ALERT = 256, SHOOTS = 512;
 
-// bullet flag bits
-const SLASH = 1, ARROW = 2;
+// bullet flag bits (OWN: fired by the player this snapshot is for)
+const SLASH = 1, ARROW = 2, OWN = 4;
+
+// what a guest's own machine already showed of its own doing (see predict.js)
+const SHOWN_HERE = new Set(["shot", "swing", "rail", "shock", "dash"]);
 
 // events that must reach everyone, wherever they are standing
 const GLOBAL = new Set([
@@ -113,13 +126,24 @@ export function encode(state, pid){
             round(b.x), round(b.y), round(b.vx), round(b.vy),
             round(b.r * 10),
             round(b.life * 100),
-            (b.kind === "slash" ? SLASH : 0) | (b.kind === "arrow" ? ARROW : 0)
+            (b.kind === "slash" ? SLASH : 0) | (b.kind === "arrow" ? ARROW : 0) | (b.pid === pid ? OWN : 0)
         ]);
 
     }
 
+    // the receiving player's own body and hands, exact, for their prediction
+    const Y = me && {
+        x: me.x, y: me.y, dt: me.dashT, dc: me.dashCd, dx: me.dashX, dy: me.dashY, h: me.held.dash,
+        sl: me.slot, en: me.energy, rl: me.reload, bu: me.burst, bt: me.burstT, ch: me.charge,
+        bm: me.beam ? 1 : 0, sh: me.shots, hf: me.held.fire, hs: me.held.swap
+    };
+
+    const vote = state.vote && {to: state.vote.travel.to, floor: state.vote.travel.floor, from: state.vote.from, ready: state.vote.ready, left: Math.round(state.vote.left * 10) / 10};
+
     return {
         k: state.tick,
+        Y,
+        V: vote,
         m: state.mode === "run" ? 1 : 0,
         f: state.floor,
         r: state.runs,
@@ -208,189 +232,330 @@ export function createMirror(seed){
         strikes: [],
         lasers: [],
         pickups: [],
-        props: []
+        props: [],
+        vote: null
     };
 
     let me = null;
-    let since = 0;                      // seconds since the last snapshot
     let needSync = false;
+    let newest = -1;                    // the latest snapshot's step
 
-    const body = {x: 0, y: 0, r: PLAYER.radius};        // where we predict we are
+    // the steady clock things are shown by
+    const snaps = [];                   // {k, at: Map(key -> [x, y])}, oldest first
+    const arrivals = [];                // our clock minus the host's, per arrival, in steps
+    let clock = 0;                      // our own time, in steps
+    let shown = null;                   // the host step being shown now
+
+    // our own character, shown ahead (predict.js)
+    const own = createPredictor();
+    const at = {map: null, mine: null, lobby: true, enemies: null};
+
+    let hostBullets = [];               // everyone else's bullets, from the host
+    const drawn = [];                   // ...plus our own, as drawn
 
 
-    function rebuild(){
+    // what predict.js needs to know about the world
+    function world(){
 
-        state.map = buildMap(state);
+        at.map = state.map;
+        at.mine = state.players.find(p => p.id === me) ?? null;
+        at.lobby = state.mode === "lobby";
+        at.enemies = state.enemies;
+
+        return at;
 
     }
 
 
-    // Takes a snapshot ({...encode(), ev: events}) and returns its events.
+    // Takes a snapshot ({...encode(), a: last input used, ev: events}) and
+    // returns its events. `broken` is a full list of broken crates, if sent.
     function apply(snap, broken){
 
         const mode = snap.m ? "run" : "lobby";
-        const changed = mode !== state.mode || snap.f !== state.floor || snap.r !== state.runs;
+        const sameFloor = mode === state.mode && snap.f === state.floor && snap.r === state.runs;
+
+        // An older snapshot than one already used (it came the slow way
+        // while the line moved from the server to a direct one): only what
+        // happened counts.
+        if(snap.k <= newest){
+
+            if(sameFloor)
+                for(const event of snap.ev ?? [])
+                    if(event.type === "crate")
+                        breakCrate(state.map, event.tile);
+
+            return ownFilter(snap.ev ?? []);
+
+        }
+
+        newest = snap.k;
 
         state.mode = mode;
         state.floor = snap.f;
         state.runs = snap.r;
         state.time = snap.t;
         state.tick = snap.k;
+        state.vote = snap.V ?? null;
 
-        if(changed)
-            rebuild();
+        if(!sameFloor){
 
-        // a full list of broken crates (on joining, or after asking for one)
+            state.map = buildMap(state);
+
+            // nothing from the last floor slides into this one
+            snaps.length = 0;
+            shown = null;
+
+        }
+
         if(broken)
             for(const index of broken)
                 breakCrate(state.map, index);
 
         for(const event of snap.ev ?? [])
-            if(event.type === "crate" && !changed)
+            if(event.type === "crate" && sameFloor)
                 breakCrate(state.map, event.tile);
 
         needSync = state.map.broken.length !== snap.bc;
 
-        state.players = snap.P.map(p => slide({...p, r: PLAYER.radius}, state.players));
-        state.enemies = snap.E.map(row => slide(decodeEnemy(row), state.enemies));
-        state.pickups = snap.I.map(([id, kind, x, y]) => slide({id, kind: PICKUPS[kind], x, y}, state.pickups));
-
-        state.bullets = snap.B.map(decodeBullet);
-
-        state.strikes = snap.S.map(([w, x, y, r, delay, total]) => ({team: w < 0 ? "e" : "p", weapon: WEAPON_IDS[w], x, y, r, delay: delay / 100, total: total / 100}));
+        state.players = snap.P.map(p => ({...p, r: PLAYER.radius, hostBeam: p.beam}));
+        state.enemies = snap.E.map(decodeEnemy);
+        state.pickups = snap.I.map(([id, kind, x, y]) => ({id, kind: PICKUPS[kind], x, y}));
+        state.strikes = snap.S.map(([w, x, y, r, delay, total]) => ({team: w < 0 ? "e" : "p", weapon: WEAPON_IDS[w], x, y, r, delay: delay / 100, start: delay / 100, total: total / 100, k: snap.k}));
         state.lasers = snap.L.map(([x, y, angle, length, warn]) => ({x, y, angle: angle / 1000, length, warn}));
-        state.props = snap.O.map(prop => ({...prop, opened: prop.opened ?? []}));
+        // (props only come when they change, see host.js)
+        if(snap.O)
+            state.props = snap.O.map(prop => ({...prop, opened: prop.opened ?? []}));
+        else if(!sameFloor)
+            state.props = [];
 
-        since = 0;
+        // our own bullets are already flying on this screen
+        hostBullets = [];
 
-        correct(changed);
+        for(const row of snap.B)
+            if(!(row[8] & OWN) || !own.placed)
+                hostBullets.push(decodeBullet(row, snap.k));
 
-        return snap.ev ?? [];
+        remember(snap);
 
-    }
+        if(snap.Y)
+            own.correct(snap.Y, snap.a ?? 0, world(), !sameFloor);
 
+        place();
 
-    // remembers where a thing was drawn, so it can slide to its new place
-    function slide(next, list){
-
-        const old = list.find(item => item.id === next.id);
-
-        next.tx = next.x;
-        next.ty = next.y;
-        next.fx = old ? old.x : next.x;
-        next.fy = old ? old.y : next.y;
-
-        // too far to be the same movement (a blink, a new floor): just jump
-        if(Math.abs(next.tx - next.fx) + Math.abs(next.ty - next.fy) > 160){
-
-            next.fx = next.tx;
-            next.fy = next.ty;
-
-        }
-
-        next.x = next.fx;
-        next.y = next.fy;
-
-        return next;
+        return ownFilter(snap.ev ?? []);
 
     }
 
 
-    // pull our predicted position towards what the host says
-    function correct(jump){
+    // Leaves out what our machine already showed of our own doing, and
+    // keeps the hit numbers of our own bullets without a second impact.
+    function ownFilter(events){
 
-        const mine = state.players.find(p => p.id === me);
+        if(!own.placed)
+            return events;
 
-        if(!mine)
-            return;
+        return events.filter(event => {
 
-        const dx = mine.tx - body.x;
-        const dy = mine.ty - body.y;
+            if(event.pid !== me)
+                return true;
 
-        if(jump || mine.dead || mine.dashT || Math.hypot(dx, dy) > PREDICT_SNAP){
+            if(SHOWN_HERE.has(event.type))
+                return false;
 
-            body.x = mine.tx;
-            body.y = mine.ty;
+            if(event.shot && (event.type === "spark" || event.type === "boom"))
+                return false;
 
-        }
-        else{
+            if(event.shot && event.type === "hit")
+                event.quiet = true;
 
-            body.x += dx * PREDICT_PULL;
-            body.y += dy * PREDICT_PULL;
+            return true;
 
-        }
-
-        mine.x = body.x;
-        mine.y = body.y;
+        });
 
     }
 
 
-    // moves the picture forward between snapshots
-    function advance(seconds, intent){
+    // where everything was at this snapshot's step, for sliding later
+    function remember(snap){
 
-        since += seconds;
+        const at = new Map();
 
-        const k = Math.min(1, since / SNAP_TIME);
+        for(const p of state.players)
+            at.set("p" + p.id, [p.x, p.y]);
 
-        for(const list of [state.players, state.enemies, state.pickups]){
+        for(const e of state.enemies)
+            at.set("e" + e.id, [e.x, e.y]);
 
-            for(const item of list){
+        for(const pk of state.pickups)
+            at.set("i" + pk.id, [pk.x, pk.y]);
 
-                item.x = item.fx + (item.tx - item.fx) * k;
-                item.y = item.fy + (item.ty - item.fy) * k;
+        snaps.push({k: snap.k, at});
 
-            }
+        if(snaps.length > KEEP)
+            snaps.shift();
+
+        arrivals.push(clock - snap.k);
+
+        if(arrivals.length > ARRIVALS)
+            arrivals.shift();
+
+    }
+
+
+    // The host step to show now: as recent as the line allows. The fastest
+    // arrival tells where the host's clock is; how much slower the slowest
+    // was tells how far back to stay so the next snapshot is always in.
+    function target(){
+
+        let fast = Infinity;
+        let slow = -Infinity;
+
+        for(const value of arrivals){
+
+            fast = Math.min(fast, value);
+            slow = Math.max(slow, value);
 
         }
 
-        for(const b of state.bullets){
+        const delay = Math.max(MIN_DELAY, Math.min(MAX_DELAY, slow - fast + SNAP_EVERY + 1));
 
-            b.x += b.vx * seconds;
-            b.y += b.vy * seconds;
-            b.life -= seconds;
+        return clock - fast - delay;
 
-        }
+    }
 
-        for(const s of state.strikes)
-            s.delay -= seconds;
+
+    // One input step on this machine (call once per simulation step, in
+    // order): our character acts on it at once.
+    function predict(seq, intent){
+
+        own.input(seq, intent, world());
+
+    }
+
+
+    /* ---- each frame ---- */
+
+    // Moves the picture forward. `intent` (optional) aims our character;
+    // `now` is our own time in steps (the last input's number and the part
+    // of a step since), which our own bullets fly by.
+    function advance(seconds, intent, now){
+
+        clock += seconds * TICKS;
+
+        const goal = target();
+
+        // follow the goal smoothly; jump only when far off (a stall, a new floor)
+        if(shown === null || Math.abs(goal - shown) > 20)
+            shown = goal;
+        else
+            shown += seconds * TICKS + (goal - shown) * Math.min(1, seconds * 2);
 
         for(const p of state.players){
 
-            if(p.swing)
+            if(p.swing && p.id !== me)
                 p.swing.t = Math.max(0.001, p.swing.t - seconds);
 
         }
 
-        // our own character answers the keys at once
+        if(now !== undefined)
+            own.advance(seconds, now, state.map, state.enemies);
+
+        place(intent);
+
+    }
+
+
+    // puts everything where it was at the step being shown
+    function place(intent){
+
+        const time = shown ?? state.tick;
+
+        let a = null;
+        let b = null;
+
+        for(const snap of snaps){
+
+            if(snap.k <= time)
+                a = snap;
+            else if(!b)
+                b = snap;
+
+        }
+
+        const position = (key, thing) => {
+
+            const from = a?.at.get(key);
+            const to = b?.at.get(key);
+
+            let x, y;
+
+            if(from && to && Math.abs(to[0] - from[0]) + Math.abs(to[1] - from[1]) < SLIDE_LIMIT){
+
+                const t = (time - a.k) / (b.k - a.k);
+
+                x = from[0] + (to[0] - from[0]) * t;
+                y = from[1] + (to[1] - from[1]) * t;
+
+            }
+            else if(from){
+
+                [x, y] = from;
+
+            }
+            else if(to){
+
+                [x, y] = to;
+
+            }
+            else{
+
+                return;
+
+            }
+
+            thing.x = x;
+            thing.y = y;
+
+        };
+
+        for(const p of state.players)
+            if(p.id !== me)
+                position("p" + p.id, p);
+
+        for(const e of state.enemies)
+            position("e" + e.id, e);
+
+        for(const pk of state.pickups)
+            position("i" + pk.id, pk);
+
+        // bullets fly in straight lines (homing ones close enough) from where
+        // the newest snapshot saw them
+        drawn.length = 0;
+
+        for(const bullet of hostBullets){
+
+            const t = (time - bullet.k) / TICKS;
+
+            bullet.x = bullet.x0 + bullet.vx * t;
+            bullet.y = bullet.y0 + bullet.vy * t;
+            bullet.life = bullet.life0 - Math.max(0, t);
+
+            drawn.push(bullet);
+
+        }
+
+        for(const flyer of own.flyers)
+            drawn.push(flyer);
+
+        state.bullets = drawn;
+
+        for(const strike of state.strikes)
+            strike.delay = strike.start - (time - strike.k) / TICKS;
+
         const mine = state.players.find(p => p.id === me);
 
-        if(!mine)
-            return;
-
-        if(intent && !mine.dead && !mine.loot){
-
-            const length = Math.hypot(intent.moveX, intent.moveY) || 1;
-
-            if(!mine.dashT && (intent.moveX || intent.moveY))
-                moveBody(state.map, body, intent.moveX / length * PLAYER.speed * seconds, intent.moveY / length * PLAYER.speed * seconds);
-
-            mine.aim = Math.atan2(intent.aimY - body.y, intent.aimX - body.x);
-
-        }
-
-        if(!mine.dashT){
-
-            mine.x = body.x;
-            mine.y = body.y;
-
-        }
-        else{
-
-            body.x = mine.x;
-            body.y = mine.y;
-
-        }
+        if(mine)
+            own.show(mine, intent, state.map, state.enemies);
 
     }
 
@@ -399,7 +564,17 @@ export function createMirror(seed){
         state,
         apply,
         advance,
-        setMe(id){ me = id; },
+        predict,
+        take: () => own.take(),
+
+        setMe(id){
+
+            me = id;
+
+            own.setId(id);
+
+        },
+
         get needSync(){ return needSync; }
     };
 
@@ -449,7 +624,7 @@ function decodeEnemy(row){
 }
 
 
-function decodeBullet([id, w, x, y, vx, vy, r, life, flags]){
+function decodeBullet([id, w, x, y, vx, vy, r, life, flags], k){
 
     const weapon = w >= 0 ? WEAPONS[w] : null;
 
@@ -460,10 +635,14 @@ function decodeBullet([id, w, x, y, vx, vy, r, life, flags]){
         tint: weapon ? 0 : -1 - w,
         x,
         y,
+        x0: x,
+        y0: y,
+        k,
         vx,
         vy,
         r: r / 10,
         life: life / 100,
+        life0: life / 100,
         kind: flags & SLASH ? "slash" : flags & ARROW ? "arrow" : null,
         pull: flags & (SLASH | ARROW) ? 0 : weapon?.pull ?? 0,
         burn: weapon?.burn ?? 0
