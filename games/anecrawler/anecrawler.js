@@ -320,18 +320,20 @@ export function init(container){
             item: pendingLoot,
             source: event.source,
             floor: state().floor,
-            current: player.weapons[player.slot]
+            hands: player.weapons,
+            held: player.slot
         });
 
     }
 
 
-    function chooseLoot(choice){
+    // choice: "equip" (into `slot`) or "bag"
+    function chooseLoot(choice, slot){
 
         if(!pendingLoot)
             return;
 
-        handle(session.send({type: "loot", choice, uid: pendingLoot.uid}));
+        handle(session.send({type: "loot", choice, slot, uid: pendingLoot.uid}));
 
         pendingLoot = null;
 
@@ -734,6 +736,8 @@ export function init(container){
     root.addEventListener("mouseenter", () => {
 
         hovered = true;
+
+        coop.warm();
 
         updatePanel();
         startFrames();

@@ -22,59 +22,55 @@ normal and one private window): Host in one, Join with the code in the other.
 http://localhost:8787/health should say `game server ok`.
 
 
-## Put it online
+## Put it online (Render, free)
 
-The site is served over https, so browsers will only connect to the game
-server over https too (`wss://`). The simplest way: a small Linux server
-(VPS) with Caddy in front, which gets the certificate for you.
+`render.yaml` at the top of the repo tells Render how to run this folder.
 
-1. **Get a small VPS** (any provider; the cheapest plan, Ubuntu 24.04).
+1. Sign up at https://render.com with your GitHub account.
+2. **New > Blueprint**, pick the `Anemois/site` repo, and confirm. Render
+   reads `render.yaml` and creates `anemois-game-server` (free, Singapore).
+3. When it is live, copy its address (`https://anemois-game-server-xxxx.onrender.com`)
+   and check that `/health` on it says `game server ok`.
+4. In `games/anecrawler/net/config.js` set
 
-2. **Point a subdomain at it.** At your domain registrar add an `A` record:
-   name `play`, value = the server's IP address. (Any name works; the steps
-   below say `play.example.com`.)
+       const PUBLIC_SERVER = "wss://anemois-game-server-xxxx.onrender.com/ws";
 
-3. **Install Node and Caddy** on the server:
+   (your address, `wss://` instead of `https://`, `/ws` on the end), then
+   commit, push and upload the site as usual.
 
-       sudo apt update
-       sudo apt install -y nodejs caddy
+Every push to `main` redeploys the server by itself.
 
-   (If `caddy` is not found, follow https://caddyserver.com/docs/install.)
+The free plan sleeps after 15 minutes without players. The game wakes it as
+soon as someone opens AneCrawler, and Host/Join wait for it (up to about a
+minute) instead of failing. Render may also restart it now and then, which
+ends any game in progress; just host again.
 
-4. **Copy this folder** to the server, from your computer:
 
-       scp -r server root@YOUR_SERVER_IP:/opt/game-server
+## Or on your own Linux server (never sleeps)
 
-5. **Start it as a service** (starts on boot, restarts if it stops):
+1. Point a subdomain (say `play.example.com`) at the server's IP address.
+2. Install Node and Caddy: `sudo apt install -y nodejs caddy`
+   (if `caddy` is not found: https://caddyserver.com/docs/install).
+3. Copy this folder over: `scp -r server root@YOUR_SERVER_IP:/opt/game-server`
+4. Start it as a service:
 
        sudo cp /opt/game-server/game-server.service /etc/systemd/system/
        sudo systemctl enable --now game-server
 
-   If your site will also live somewhere else than www.csie.ntu.edu.tw, add
-   that address to `ALLOWED_ORIGINS` in the service file (comma-separated),
-   then `sudo systemctl daemon-reload && sudo systemctl restart game-server`.
-
-6. **Give it https**: put your subdomain into `Caddyfile`, then
+5. Put your subdomain into `Caddyfile` (Caddy fetches the https certificate), then
 
        sudo cp /opt/game-server/Caddyfile /etc/caddy/Caddyfile
        sudo systemctl reload caddy
 
-   If the server has a firewall: `sudo ufw allow 80,443/tcp`.
-
-7. **Check**: https://play.example.com/health should say `game server ok`.
-
-8. **Tell the game where it is**: in `games/anecrawler/net/config.js` set
-
-       const PUBLIC_SERVER = "wss://play.example.com/ws";
-
-   and upload the site as usual.
+6. Check https://play.example.com/health, then put
+   `wss://play.example.com/ws` into `games/anecrawler/net/config.js`.
 
 Logs: `journalctl -u game-server -f`.
 
 
 ## Settings
 
-Environment variables (set in `game-server.service`):
+Environment variables (set in `render.yaml` or `game-server.service`):
 
 - `PORT`: where to listen (default 8787; Caddy talks to it there).
 - `ALLOWED_ORIGINS`: the websites allowed to connect, comma-separated.
@@ -88,4 +84,5 @@ messages up to 256 KB, and slow or silent connections are dropped.
 
 - `server.js`: rooms and codes, and passing messages along
 - `websocket.js`: the WebSocket protocol on Node's own http server
-- `game-server.service`, `Caddyfile`: the two setup files used above
+- `game-server.service`, `Caddyfile`: for running it on your own server
+- `../render.yaml`: for running it on Render

@@ -1,0 +1,19 @@
+# Render setup for the game server (server/). Render reads this file when
+# you create a "Blueprint" from this repo: see server/README.md.
+
+services:
+  - type: web
+    name: anemois-game-server
+    runtime: node
+    plan: free
+    region: singapore                 # the closest Render region to Taiwan
+    rootDir: server
+    buildCommand: npm install         # nothing to install, but Render wants a build step
+    startCommand: node server.js
+    healthCheckPath: /health
+    autoDeployTrigger: commit         # a push to main updates the server
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://www.csie.ntu.edu.tw
+      - key: NODE_VERSION
+        value: "22"

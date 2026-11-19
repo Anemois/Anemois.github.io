@@ -1,5 +1,5 @@
 import {SERVER_URL, SERVER_READY} from "../net/config.js";
-import {hostRoom, joinRoom} from "../net/relay.js";
+import {hostRoom, joinRoom, wake} from "../net/relay.js";
 import {setText} from "../util.js";
 
 
@@ -44,6 +44,10 @@ export function createCoop(element, hooks){
     let mode = "solo";          // solo | busy | hosting | guest
     let room = null;            // {code, close} while hosting
     let note = SERVER_READY ? "" : "no game server set up yet";
+    let warmed = false;
+
+    // the free server sleeps when nobody plays; this is shown while it wakes
+    const waiting = () => settle("busy", "waking the game server, up to a minute…");
 
     hostButton.onclick = host;
     joinButton.onclick = join;
@@ -81,7 +85,9 @@ export function createCoop(element, hooks){
                     if(mode === "hosting")
                         settle("solo", reason);
 
-                }
+                },
+
+                onWaiting: waiting
             });
 
             settle("hosting", "share the code with your friends");
@@ -110,7 +116,7 @@ export function createCoop(element, hooks){
 
         try{
 
-            hooks.join(await joinRoom(SERVER_URL, code.trim()));
+            hooks.join(await joinRoom(SERVER_URL, code.trim(), {onWaiting: waiting}));
 
             settle("guest", "");
 
@@ -181,6 +187,19 @@ export function createCoop(element, hooks){
     }
 
 
-    return {update, lost, get mode(){ return mode; }};
+    // someone opened the game: give a sleeping server a head start
+    function warm(){
+
+        if(warmed || !SERVER_READY)
+            return;
+
+        warmed = true;
+
+        wake(SERVER_URL);
+
+    }
+
+
+    return {update, lost, warm, get mode(){ return mode; }};
 
 }

@@ -567,8 +567,39 @@
     gap:8px;
 }
 
+.ac-case-slots {
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:8px;
+}
+
 .anecrawler .ac-case-use {
+    display:grid;
+    grid-template-columns:auto auto;
+    align-items:center;
+    column-gap:8px;
     border-color:#63d69f;
+    text-align:left;
+}
+
+.ac-case-use span {
+    grid-row:1;
+}
+
+.ac-case-use b {
+    font-weight:normal;
+}
+
+.ac-case-use small {
+    grid-row:2;
+    color:#888;
+    font-size:11px;
+}
+
+.ac-case-use kbd {
+    grid-column:2;
+    grid-row:1 / 3;
 }
 
 

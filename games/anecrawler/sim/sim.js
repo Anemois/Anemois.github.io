@@ -466,7 +466,9 @@ export function command(state, pid, cmd){
 
     switch(cmd.type){
 
-        // a case finished spinning: "equip" puts it in hand, "bag" keeps it
+        // A case finished spinning: "equip" puts it in hand, "bag" keeps it.
+        // `slot` says which weapon it replaces; a free hand is filled first,
+        // and with no slot given it replaces the weapon being held.
         case "loot": {
 
             if(!p.loot)
@@ -476,10 +478,12 @@ export function command(state, pid, cmd){
 
             if(cmd.choice === "equip" && !p.dead){
 
-                if(p.weapons.length < 2)
+                const chosen = Number.isInteger(cmd.slot) && cmd.slot >= 0 && cmd.slot < p.weapons.length;
+
+                if(p.weapons.length < 2 && !chosen)
                     p.weapons.push(item);
                 else
-                    p.weapons[p.slot] = item;
+                    p.weapons[chosen ? cmd.slot : p.slot] = item;
 
                 p.slot = p.weapons.indexOf(item);
 
