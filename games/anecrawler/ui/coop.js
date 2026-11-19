@@ -1,23 +1,16 @@
-import {hostTabs, joinTabs} from "../net/transport.js";
-import {makeJoinCode, answerJoinCode} from "../net/rtc.js";
+import {SERVER_URL, SERVER_READY} from "../net/config.js";
+import {hostRoom, joinRoom} from "../net/relay.js";
 import {setText} from "../util.js";
 
 
 // The "Play together" part of the panel.
 //
-// Hosting: your world opens to others. Tabs on this computer join on their
-// own; a friend elsewhere joins by swapping two codes with you (see rtc.js).
-// Joining: first looks for a host in another tab, otherwise makes a join
-// code to send to a friend who is hosting.
+// Host: opens a room on the game server and shows its code (say, K7QM).
+// Join: asks for a code and joins that room. Up to four players.
 //
-// hooks: host() -> the host session (has accept(end)),
-//        join(end) -> a guest session over that transport (or null),
-//        leave() -> back to playing alone,
-//        session() -> the current session
-const ROOM = "main";
-const TAB_WAIT = 900;           // ms to wait for a host in another tab
-
-
+// hooks: session() -> the current session,
+//        join(end) -> switches to a guest session over that connection,
+//        leave()   -> back to playing alone
 export function createCoop(element, hooks){
 
     element.innerHTML =
@@ -26,10 +19,14 @@ export function createCoop(element, hooks){
             <span>Play together</span>
             <small class="ac-coop-status"></small>
         </div>
+        <div class="ac-coop-code" hidden>
+            <span>Room code</span>
+            <strong></strong>
+            <button class="ac-coop-copy">Copy</button>
+        </div>
         <div class="ac-row ac-coop-buttons">
             <button class="ac-coop-host">Host</button>
             <button class="ac-coop-join">Join</button>
-            <button class="ac-coop-invite">Invite with a code</button>
             <button class="ac-coop-leave"></button>
         </div>
         `;
@@ -37,180 +34,120 @@ export function createCoop(element, hooks){
     const $ = selector => element.querySelector(selector);
 
     const status = $(".ac-coop-status");
+    const codeBox = $(".ac-coop-code");
+    const codeText = $(".ac-coop-code strong");
+    const copy = $(".ac-coop-copy");
     const hostButton = $(".ac-coop-host");
     const joinButton = $(".ac-coop-join");
-    const invite = $(".ac-coop-invite");
     const leave = $(".ac-coop-leave");
 
-    let mode = "solo";          // solo | hosting | joining | guest
-    let stopTabs = null;
-    let note = "";
+    let mode = "solo";          // solo | busy | hosting | guest
+    let room = null;            // {code, close} while hosting
+    let note = SERVER_READY ? "" : "no game server set up yet";
 
-    hostButton.onclick = startHosting;
+    hostButton.onclick = host;
     joinButton.onclick = join;
-    invite.onclick = inviteWithCode;
     leave.onclick = stop;
 
+    copy.onclick = () => {
 
-    function startHosting(){
+        navigator.clipboard?.writeText(room?.code ?? "").catch(() => {});
 
-        const session = hooks.host();
+        setText(copy, "Copied");
 
-        stopTabs = hostTabs(ROOM, end => session.accept(end));
-        mode = "hosting";
-        note = "";
+        setTimeout(() => setText(copy, "Copy"), 1500);
+
+    };
+
+
+    async function host(){
+
+        mode = "busy";
+        note = "opening a room…";
 
         update();
+
+        try{
+
+            room = await hostRoom(SERVER_URL, {
+                game: "anecrawler",
+                onGuest: end => hooks.session().accept(end),
+
+                // the server went away: everyone else is gone, play on alone
+                onClose: reason => {
+
+                    room = null;
+
+                    if(mode === "hosting")
+                        settle("solo", reason);
+
+                }
+            });
+
+            settle("hosting", "share the code with your friends");
+
+        }
+        catch(error){
+
+            settle("solo", error.message);
+
+        }
 
     }
 
 
     async function join(){
 
-        mode = "joining";
-        note = "looking for a host on this computer…";
+        const code = prompt("Room code (ask the host for it):");
 
-        update();
-
-        // a host in another tab answers within a moment
-        const session = hooks.join(joinTabs(ROOM));
-
-        await wait(TAB_WAIT);
-
-        if(session.me !== null){
-
-            mode = "guest";
-            note = "";
-
-            return update();
-
-        }
-
-        session.close();
-
-        await joinWithCode();
-
-    }
-
-
-    async function joinWithCode(){
-
-        note = "making a join code…";
-
-        update();
-
-        try{
-
-            const offer = await makeJoinCode();
-
-            copy(offer.code);
-
-            const sent = prompt("Your join code (already copied). Send it to the friend who is hosting, then press OK.", offer.code);
-
-            if(sent === null)
-                return cancel(offer);
-
-            const reply = prompt("Paste the reply code your friend sends back:");
-
-            if(!reply)
-                return cancel(offer);
-
-            note = "connecting…";
-
-            update();
-
-            const end = await timeout(offer.finish(reply), 15000);
-
-            hooks.join(end);
-
-            mode = "guest";
-            note = "";
-
-        }
-        catch(error){
-
-            mode = "solo";
-            note = `could not connect: ${error.message}`;
-
-        }
-
-        update();
-
-    }
-
-
-    function cancel(offer){
-
-        offer.cancel();
-
-        mode = "solo";
-        note = "";
-
-        update();
-
-    }
-
-
-    async function inviteWithCode(){
-
-        const code = prompt("Paste your friend's join code:");
-
-        if(!code)
+        if(!code?.trim())
             return;
 
+        mode = "busy";
+        note = "joining…";
+
+        update();
+
         try{
 
-            const answer = await answerJoinCode(code);
+            hooks.join(await joinRoom(SERVER_URL, code.trim()));
 
-            copy(answer.code);
-
-            prompt("Reply code (already copied). Send it back to your friend.", answer.code);
-
-            note = "waiting for your friend…";
-
-            update();
-
-            const end = await timeout(answer.end, 60000);
-
-            hooks.session().accept(end);
-
-            note = "";
+            settle("guest", "");
 
         }
         catch(error){
 
-            note = `could not connect: ${error.message}`;
+            settle("solo", error.message);
 
         }
-
-        update();
 
     }
 
 
     function stop(){
 
-        stopTabs?.();
-        stopTabs = null;
-
-        mode = "solo";
-        note = "";
+        room?.close();
+        room = null;
 
         hooks.leave();
 
-        update();
+        settle("solo", "");
 
     }
 
 
-    // the host dropped us
+    // the host went away while we were their guest
     function lost(reason){
 
-        stopTabs?.();
-        stopTabs = null;
+        settle("solo", reason);
 
-        mode = "solo";
-        note = reason;
+    }
+
+
+    function settle(next, text){
+
+        mode = next;
+        note = text;
 
         update();
 
@@ -222,39 +159,28 @@ export function createCoop(element, hooks){
         const players = hooks.session().players ?? 1;
 
         hostButton.hidden = joinButton.hidden = mode !== "solo";
-        invite.hidden = mode !== "hosting";
-        leave.hidden = mode === "solo" || mode === "joining";
+        hostButton.disabled = joinButton.disabled = !SERVER_READY;
+        leave.hidden = mode !== "hosting" && mode !== "guest";
+        codeBox.hidden = mode !== "hosting" || !room;
 
         setText(leave, mode === "hosting" ? "Stop hosting" : "Leave");
+        setText(codeText, room?.code ?? "");
 
         const text = {
             solo: "alone",
-            joining: "joining…",
+            busy: "",
             hosting: `hosting · ${players} player${players === 1 ? "" : "s"}`,
             guest: `joined · ${players} players`
         }[mode];
 
-        setText(status, note ? `${text} · ${note}` : text);
+        // once someone has joined, the reminder to share the code can go
+        const shown = mode === "hosting" && players > 1 ? "" : note;
+
+        setText(status, [text, shown].filter(Boolean).join(" · "));
 
     }
 
 
     return {update, lost, get mode(){ return mode; }};
-
-}
-
-
-const wait = ms =>
-    new Promise(resolve => setTimeout(resolve, ms));
-
-function timeout(promise, ms){
-
-    return Promise.race([promise, wait(ms).then(() => { throw new Error("it took too long"); })]);
-
-}
-
-function copy(text){
-
-    navigator.clipboard?.writeText(text).catch(() => {});
 
 }

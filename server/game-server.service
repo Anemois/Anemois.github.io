@@ -1,0 +1,23 @@
+# systemd service: keeps the game server running and restarts it if it stops.
+# Copy to /etc/systemd/system/game-server.service (see README.md).
+
+[Unit]
+Description=Game server for the site's multiplayer games
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/game-server
+ExecStart=/usr/bin/node server.js
+Environment=PORT=8787
+Environment=ALLOWED_ORIGINS=https://www.csie.ntu.edu.tw
+Restart=always
+RestartSec=2
+
+# runs as a throwaway user with no rights to anything else on the machine
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+# Caddy: gives the game server an https address (wss://) with a free,
+# automatically renewed certificate, and passes connections on to it.
+# Replace play.example.com with your own (sub)domain.
+
+play.example.com {
+    reverse_proxy localhost:8787
+}

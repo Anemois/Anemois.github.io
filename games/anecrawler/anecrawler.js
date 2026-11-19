@@ -95,7 +95,6 @@ export function init(container){
 
     const coop = createCoop($(".ac-coop"), {
         session: () => session,
-        host: () => session,
         join: joinGame,
         leave: playAlone
     });
@@ -135,9 +134,11 @@ export function init(container){
     }
 
 
+    // A guest goes back to a world of their own. A host just carries on:
+    // their guests drop out as the room closes.
     function playAlone(){
 
-        if(session.role === "guest" || session.online){
+        if(session.role === "guest"){
 
             session.close();
 

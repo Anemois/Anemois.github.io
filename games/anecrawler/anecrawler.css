@@ -685,6 +685,32 @@
     font-size:12px;
 }
 
+.ac-coop-code {
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:8px;
+    padding:6px 10px;
+    background:#0b0b0b;
+    border:1px solid #333;
+    border-radius:6px;
+    color:#888;
+    font-size:12px;
+}
+
+.ac-coop-code strong {
+    flex:1;
+    color:white;
+    font:bold 20px/1 ui-monospace, Menlo, Consolas, monospace;
+    letter-spacing:0.2em;
+    user-select:text;
+}
+
+.anecrawler .ac-coop-copy {
+    padding:4px 10px;
+    font-size:12px;
+}
+
 .ac-coop-buttons {
     gap:6px;
     margin:0;

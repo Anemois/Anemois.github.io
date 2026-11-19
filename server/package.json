@@ -1,0 +1,12 @@
+{
+    "name": "site-game-server",
+    "private": true,
+    "description": "Room server for the multiplayer games on the site. No dependencies.",
+    "type": "module",
+    "scripts": {
+        "start": "node server.js"
+    },
+    "engines": {
+        "node": ">=18"
+    }
+}
