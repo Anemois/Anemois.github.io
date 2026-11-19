@@ -742,6 +742,35 @@
     font-size:12px;
 }
 
+.ac-coop-form {
+    display:flex;
+    gap:6px;
+}
+
+.ac-coop-input {
+    flex:1;
+    min-width:0;
+    padding:5px 10px;
+    background:#0b0b0b;
+    border:1px solid #555;
+    border-radius:6px;
+    color:white;
+    font:bold 16px/1 ui-monospace, Menlo, Consolas, monospace;
+    letter-spacing:0.2em;
+    text-transform:uppercase;
+    user-select:text;
+}
+
+.ac-coop-input:focus {
+    border-color:#63d69f;
+    outline:none;
+}
+
+.anecrawler .ac-coop-form button {
+    padding:5px 10px;
+    font-size:12px;
+}
+
 .ac-coop-buttons {
     gap:6px;
     margin:0;

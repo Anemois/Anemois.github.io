@@ -6,7 +6,8 @@ import {setText} from "../util.js";
 // The "Play together" part of the panel.
 //
 // Host: opens a room on the game server and shows its code (say, K7QM).
-// Join: asks for a code and joins that room. Up to four players.
+// Join: a box for the code appears right here (no browser popup, which
+// would knock the game out of full screen). Up to four players.
 //
 // hooks: session() -> the current session,
 //        join(end) -> switches to a guest session over that connection,
@@ -24,6 +25,12 @@ export function createCoop(element, hooks){
             <strong></strong>
             <button class="ac-coop-copy">Copy</button>
         </div>
+        <form class="ac-coop-form" hidden>
+            <input class="ac-coop-input" maxlength="4" placeholder="CODE" aria-label="Room code"
+                autocomplete="off" autocapitalize="characters" spellcheck="false">
+            <button type="submit">Join</button>
+            <button type="button" class="ac-coop-cancel">Cancel</button>
+        </form>
         <div class="ac-row ac-coop-buttons">
             <button class="ac-coop-host">Host</button>
             <button class="ac-coop-join">Join</button>
@@ -40,8 +47,10 @@ export function createCoop(element, hooks){
     const hostButton = $(".ac-coop-host");
     const joinButton = $(".ac-coop-join");
     const leave = $(".ac-coop-leave");
+    const form = $(".ac-coop-form");
+    const input = $(".ac-coop-input");
 
-    let mode = "solo";          // solo | busy | hosting | guest
+    let mode = "solo";          // solo | asking | busy | hosting | guest
     let room = null;            // {code, close} while hosting
     let note = SERVER_READY ? "" : "no game server set up yet";
     let warmed = false;
@@ -50,8 +59,33 @@ export function createCoop(element, hooks){
     const waiting = () => settle("busy", "waking the game server, up to a minute…");
 
     hostButton.onclick = host;
-    joinButton.onclick = join;
+    joinButton.onclick = ask;
     leave.onclick = stop;
+
+    $(".ac-coop-cancel").onclick = () => settle("solo", "");
+
+    form.onsubmit = event => {
+
+        event.preventDefault();
+
+        join(input.value);
+
+    };
+
+    // only letters and digits, shown in capitals; Esc gives up
+    input.oninput = () => input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+    input.onkeydown = event => {
+
+        if(event.key === "Escape"){
+
+            event.preventDefault();
+
+            settle("solo", "");
+
+        }
+
+    };
 
     copy.onclick = () => {
 
@@ -102,12 +136,33 @@ export function createCoop(element, hooks){
     }
 
 
-    async function join(){
+    // shows the code box
+    function ask(){
 
-        const code = prompt("Room code (ask the host for it):");
+        input.value = "";
 
-        if(!code?.trim())
+        settle("asking", "type the code the host sees");
+
+        input.focus();
+
+    }
+
+
+    async function join(code){
+
+        code = code.trim();
+
+        if(code.length < 4){
+
+            note = "the code has 4 letters";
+
+            update();
+
+            input.focus();
+
             return;
+
+        }
 
         mode = "busy";
         note = "joining…";
@@ -165,6 +220,7 @@ export function createCoop(element, hooks){
         const players = hooks.session().players ?? 1;
 
         hostButton.hidden = joinButton.hidden = mode !== "solo";
+        form.hidden = mode !== "asking";
         hostButton.disabled = joinButton.disabled = !SERVER_READY;
         leave.hidden = mode !== "hosting" && mode !== "guest";
         codeBox.hidden = mode !== "hosting" || !room;
@@ -174,6 +230,7 @@ export function createCoop(element, hooks){
 
         const text = {
             solo: "alone",
+            asking: "",
             busy: "",
             hosting: `hosting · ${players} player${players === 1 ? "" : "s"}`,
             guest: `joined · ${players} players`
