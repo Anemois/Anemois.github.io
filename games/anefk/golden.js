@@ -1,12 +1,13 @@
-import {GOLDEN_DELAY, GOLDEN_LIFETIME} from "./data.js";
+import {GOLDEN_DELAY, GOLDEN_STORE} from "./data.js";
 
 
-// Schedules golden orbs: a random delay after the last one is gone.
-// getDelayScale() lets the skill tree shorten the delay.
+// Schedules golden orbs. One arrives after a random delay and waits for the
+// player, up to GOLDEN_STORE at once: nothing is lost by being away until the
+// store is full. While it is full the clock is paused (it restarts as soon as
+// a slot frees up). getDelayScale() lets the skill tree shorten the delay.
 export function createGolden(orbs, getDelayScale){
 
     let nextAt = schedule();
-    let active = false;
 
 
     function schedule(){
@@ -20,34 +21,31 @@ export function createGolden(orbs, getDelayScale){
     }
 
 
-    // call every tick; `visible` is false while the game card is collapsed,
-    // so a golden orb never appears (and expires) where nobody can see it
-    function update(visible){
+    const isFull = () => orbs.goldenCount() >= GOLDEN_STORE;
 
-        if(orbs.hasGolden()){
 
-            active = true;
+    // call every tick
+    function update(){
 
-            return;
-
-        }
-
-        if(active){
-
-            active = false;
-
+        if(isFull())
             nextAt = schedule();
 
-            return;
-
-        }
-
-        if(visible && Date.now() >= nextAt)
-            active = orbs.spawnGolden(GOLDEN_LIFETIME * 1000);
+        else if(Date.now() >= nextAt && orbs.spawnGolden())
+            nextAt = schedule();
 
     }
 
 
-    return {update};
+    // seconds until the next orb, or null while the store is full
+    function secondsLeft(){
+
+        return isFull()
+            ? null
+            : Math.max(0, (nextAt - Date.now()) / 1000);
+
+    }
+
+
+    return {update, secondsLeft};
 
 }

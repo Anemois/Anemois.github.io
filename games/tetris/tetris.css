@@ -68,7 +68,8 @@
         color 0.2s ease;
 }
 
-#tetris:hover .tetris-title {
+#tetris:hover .tetris-title,
+.game-slot.focused #tetris .tetris-title {
     color: white;
 }
 
@@ -104,7 +105,8 @@
         opacity 0.2s ease;
 }
 
-#tetris:hover .tetris-content {
+#tetris:hover .tetris-content,
+.game-slot.focused #tetris .tetris-content {
     max-height:
         max(
             600px,

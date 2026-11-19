@@ -3,12 +3,9 @@ import {TREE} from "./tree-data.js";
 
 
 const KEY = "anefk-save";
-const VERSION = 3;
+const VERSION = 4;
 
 const TREE_IDS = new Set(TREE.map(node => node.id));
-
-// v2 gold shop: base costs, doubling per level (refunded as gold on migrate)
-const LEGACY_GOLD_BASE = [1, 2, 5];
 
 
 const num = value =>
@@ -19,18 +16,13 @@ export const zeroLevels = items =>
     Object.fromEntries(items.map(item => [item.id, 0]));
 
 
-// levels are stored by id so reordering or adding items never corrupts a save;
-// old saves stored them as arrays, indexed in the same order as the item list
+// levels are stored by id so reordering or adding items never corrupts a save
 function levelsFrom(items, source){
 
     return Object.fromEntries(
-        items.map((item, index) => {
+        items.map(item => {
 
-            const raw = Array.isArray(source)
-                ? source[index]
-                : source?.[item.id];
-
-            const levelValue = Math.floor(num(raw));
+            const levelValue = Math.floor(num(source?.[item.id]));
 
             return [
                 item.id,
@@ -43,36 +35,11 @@ function levelsFrom(items, source){
 }
 
 
+// Saves from before version 4 were made under the old, much faster balance:
+// their levels and gold would skip the new curve, so they start over.
 function migrate(raw){
 
-    const data = {...raw};
-
-    // v1: three helpers (Miner, Factory, Quantum), no per-run tracking
-    if(!data.version){
-
-        const helpers = data.helpers;
-
-        if(Array.isArray(helpers) && helpers.length === 3)
-            data.helpers = [helpers[0], 0, 0, helpers[1], 0, 0, helpers[2], 0];
-
-        data.runBlobs ??= data.blobs;
-
-    }
-
-    // v2: seven upgrades in an array; only Faster Helpers still exists
-    if(Array.isArray(data.upgrades))
-        data.upgrades = {faster:data.upgrades[1]};
-
-    // v2: multiplicative gold shop is gone, refund what was spent
-    if(Array.isArray(data.goldUpgrades)){
-
-        data.gold = num(data.gold) + data.goldUpgrades.reduce(
-            (sum, level, i) =>
-                sum + (LEGACY_GOLD_BASE[i] ?? 0) * (Math.pow(2, num(level)) - 1),
-            0
-        );
-
-    }
+    const data = raw?.version === VERSION ? raw : {};
 
     return {
         version: VERSION,
@@ -95,7 +62,14 @@ export function loadSave(){
 
     try{
 
-        return migrate(JSON.parse(localStorage.getItem(KEY)) ?? {});
+        const raw = localStorage.getItem(KEY);
+        const data = JSON.parse(raw);
+
+        // keep an old save under another key before it gets replaced
+        if(data && data.version !== VERSION)
+            localStorage.setItem(`${KEY}-backup`, raw);
+
+        return migrate(data);
 
     }
     catch{
@@ -121,12 +95,12 @@ export function encodeSave(save){
 }
 
 
-// throws on anything that isn't a save code
+// throws on anything that isn't a current save code
 export function decodeSave(code){
 
     const data = JSON.parse(atob(code));
 
-    if(!data || typeof data !== "object")
+    if(data?.version !== VERSION)
         throw new Error("Invalid save");
 
     return migrate(data);

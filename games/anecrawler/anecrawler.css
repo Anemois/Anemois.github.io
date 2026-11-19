@@ -1,0 +1,697 @@
+.anecrawler {
+    width:100%;
+    min-width:0;
+    min-height:44px;
+    padding:30px;
+    box-sizing:border-box;
+    background:#141414;
+    border:1px solid #374151;
+    border-radius:15px;
+    color:white;
+    text-align:left;
+    user-select:none;
+}
+
+.anecrawler-title {
+    margin:0;
+    color:gray;
+    font-size:24px;
+    line-height:1;
+    transition:color 0.2s ease;
+}
+
+.anecrawler:hover .anecrawler-title,
+.game-slot.focused .anecrawler .anecrawler-title {
+    color:white;
+}
+
+.anecrawler-header {
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:20px;
+}
+
+.anecrawler-stats {
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+    gap:6px 20px;
+    color:#888;
+}
+
+.anecrawler-content {
+    display:grid;
+    grid-template-columns:minmax(0, 1fr);
+    max-height:0;
+    margin-top:0;
+    opacity:0;
+    overflow:hidden;
+    transition:
+        max-height 0.25s ease,
+        margin-top 0.2s ease,
+        opacity 0.2s ease;
+}
+
+.anecrawler:hover .anecrawler-content,
+.game-slot.focused .anecrawler .anecrawler-content {
+    max-height:760px;
+    margin-top:24px;
+    opacity:1;
+}
+
+.anecrawler [hidden] {
+    display:none !important;
+}
+
+
+/* ---------------- Layout ---------------- */
+
+.ac-layout {
+    display:grid;
+    grid-template-columns:minmax(0, 3fr) minmax(250px, 1fr);
+    gap:24px;
+    align-items:start;
+}
+
+.ac-field {
+    position:relative;
+    aspect-ratio:16 / 9;
+    background:#0b0b0b;
+    border:1px solid #333;
+    border-radius:10px;
+    overflow:hidden;
+}
+
+.ac-canvas {
+    display:block;
+    width:100%;
+    height:100%;
+    cursor:crosshair;
+}
+
+/* the panel never makes the card taller than the field: it scrolls instead */
+.ac-panel {
+    align-self:stretch;
+    contain:size;
+    overflow-y:auto;
+    padding-right:4px;
+    scrollbar-width:thin;
+}
+
+.ac-row {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+    margin-bottom:12px;
+}
+
+.ac-touch-note {
+    display:none;
+}
+
+
+/* ---------------- Buttons ---------------- */
+
+.anecrawler button {
+    background:#232323;
+    border:1px solid #555;
+    border-radius:6px;
+    color:white;
+    padding:8px 14px;
+    font:inherit;
+    font-size:13px;
+    cursor:pointer;
+    transition:
+        background 0.15s ease,
+        transform 0.15s ease;
+}
+
+.anecrawler button:hover {
+    background:#303030;
+}
+
+.anecrawler button:active {
+    transform:scale(0.95);
+}
+
+.anecrawler button:disabled {
+    opacity:0.4;
+    cursor:not-allowed;
+}
+
+.anecrawler button:disabled:hover {
+    background:#232323;
+}
+
+.anecrawler button:disabled:active {
+    transform:none;
+}
+
+.anecrawler button.armed {
+    background:#7f1d1d;
+    border-color:#ef4444;
+}
+
+.anecrawler button.armed:hover {
+    background:#991b1b;
+}
+
+.anecrawler kbd {
+    margin-left:4px;
+    padding:0 4px;
+    border:1px solid #555;
+    border-radius:4px;
+    color:#888;
+    font:11px Arial, Helvetica, sans-serif;
+}
+
+.anecrawler .ac-run-row button {
+    padding:6px 10px;
+}
+
+.anecrawler .ac-start {
+    flex:1;
+    border-color:#63d69f;
+}
+
+.anecrawler .ac-quit {
+    flex:1;
+}
+
+
+/* ---------------- Loadout ---------------- */
+
+.ac-loadout {
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+    margin-bottom:10px;
+}
+
+.anecrawler .ac-slot {
+    display:flex;
+    align-items:center;
+    gap:6px;
+    min-width:0;
+    min-height:52px;
+    padding:6px 8px;
+    background:#1d1d1d;
+    border-color:#333;
+    border-radius:8px;
+    text-align:left;
+}
+
+.anecrawler .ac-slot.active {
+    border-color:var(--rarity);
+    box-shadow:inset 0 0 0 1px var(--rarity);
+}
+
+.ac-slot img {
+    flex:none;
+    width:36px;
+    height:36px;
+}
+
+.ac-slot span {
+    display:grid;
+    min-width:0;
+}
+
+.ac-slot b {
+    overflow:hidden;
+    font-size:12px;
+    font-weight:normal;
+    white-space:nowrap;
+    text-overflow:ellipsis;
+}
+
+.ac-slot small {
+    color:#888;
+    font-size:11px;
+}
+
+
+/* ---------------- Selected weapon ---------------- */
+
+.ac-detail {
+    display:grid;
+    gap:6px;
+    margin-bottom:12px;
+    padding:10px 12px;
+    background:#1d1d1d;
+    border:1px solid #333;
+    border-left:3px solid var(--rarity, #333);
+    border-radius:8px;
+}
+
+.ac-detail:empty {
+    display:none;
+}
+
+.ac-detail-head {
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
+.ac-detail-head img {
+    width:48px;
+    height:48px;
+}
+
+.ac-detail-head div {
+    display:grid;
+    gap:2px;
+}
+
+.ac-detail small {
+    color:#888;
+    font-size:12px;
+    line-height:1.35;
+}
+
+.ac-tags {
+    display:flex;
+    flex-wrap:wrap;
+    gap:4px;
+}
+
+.ac-tags span {
+    padding:1px 6px;
+    background:#0b0b0b;
+    border:1px solid #333;
+    border-radius:10px;
+    color:#aaa;
+    font-size:11px;
+}
+
+.ac-detail-actions {
+    gap:6px;
+    margin:2px 0 0;
+}
+
+.anecrawler .ac-detail-actions button {
+    padding:5px 8px;
+    font-size:12px;
+}
+
+.ac-detail-note:empty {
+    display:none;
+}
+
+
+/* ---------------- Bag ---------------- */
+
+.ac-bag-head {
+    justify-content:space-between;
+    margin-bottom:8px;
+    color:#ccc;
+    font-size:13px;
+}
+
+.anecrawler .ac-sort {
+    padding:4px 10px;
+    font-size:12px;
+}
+
+.ac-bag {
+    display:grid;
+    gap:4px;
+    margin-bottom:10px;
+}
+
+.anecrawler .ac-item {
+    display:grid;
+    grid-template-columns:28px minmax(0, 1fr) auto;
+    grid-template-rows:auto auto;
+    align-items:center;
+    column-gap:8px;
+    padding:4px 8px;
+    background:#0b0b0b;
+    border:1px solid #333;
+    border-left:3px solid var(--rarity);
+    border-radius:6px;
+    text-align:left;
+}
+
+.anecrawler .ac-item:hover {
+    background:#1d1d1d;
+}
+
+.anecrawler .ac-item.selected {
+    background:#1d1d1d;
+    border-color:#666;
+    border-left-color:var(--rarity);
+}
+
+.ac-item img {
+    grid-row:span 2;
+    width:28px;
+    height:28px;
+}
+
+.ac-item-name {
+    overflow:hidden;
+    color:var(--rarity);
+    font-size:12px;
+    white-space:nowrap;
+    text-overflow:ellipsis;
+}
+
+.ac-item-level {
+    color:#888;
+    font-size:11px;
+}
+
+.ac-item-tag {
+    grid-column:2 / 4;
+    color:#666;
+    font-size:11px;
+}
+
+.ac-item-tag:empty {
+    display:none;
+}
+
+.ac-item.fresh .ac-item-name::after {
+    content:" new";
+    color:#facc15;
+    font-size:10px;
+}
+
+.ac-item.shiny,
+.ac-card.shiny {
+    animation:ac-shine 2.4s ease-in-out infinite;
+}
+
+@keyframes ac-shine {
+    50% {
+        box-shadow:0 0 10px -2px var(--rarity);
+    }
+}
+
+.anecrawler .ac-bulk {
+    width:100%;
+    margin-bottom:12px;
+    padding:6px 10px;
+    font-size:12px;
+}
+
+.ac-help {
+    margin-bottom:12px;
+    color:#666;
+    font-size:12px;
+    line-height:1.5;
+}
+
+.ac-help b {
+    color:#999;
+    font-weight:normal;
+}
+
+.anecrawler .ac-saves button {
+    padding:6px 10px;
+}
+
+
+/* ---------------- Chest popup ---------------- */
+
+.ac-case,
+.ac-overlay {
+    position:absolute;
+    inset:0;
+    display:grid;
+    place-items:center;
+    background:rgba(11, 11, 11, 0.72);
+}
+
+.ac-case-box,
+.ac-overlay-box {
+    display:grid;
+    justify-items:center;
+    gap:12px;
+    width:min(92%, 640px);
+    padding:18px 0;
+    background:#141414;
+    border:1px solid #374151;
+    border-radius:12px;
+}
+
+.ac-case.boss .ac-case-box {
+    border-color:#facc15;
+}
+
+.ac-case-title {
+    color:#ccc;
+    font-size:14px;
+    letter-spacing:0.05em;
+    text-transform:uppercase;
+}
+
+.ac-case-window {
+    position:relative;
+    width:100%;
+    height:116px;
+    overflow:hidden;
+    background:#0b0b0b;
+    border-top:1px solid #333;
+    border-bottom:1px solid #333;
+    mask-image:linear-gradient(to right, transparent, black 16%, black 84%, transparent);
+}
+
+.ac-case-track {
+    display:flex;
+    gap:8px;
+    padding:8px 0;
+    will-change:transform;
+}
+
+/* 110px + 8px gap = CARD_STEP in case.js */
+.ac-card {
+    flex:none;
+    display:grid;
+    justify-items:center;
+    align-content:center;
+    gap:4px;
+    box-sizing:border-box;
+    width:110px;
+    height:98px;
+    background:linear-gradient(to bottom, #1d1d1d 55%, color-mix(in srgb, var(--rarity) 22%, #1d1d1d));
+    border:1px solid #333;
+    border-bottom:3px solid var(--rarity);
+    border-radius:6px;
+}
+
+.ac-card img {
+    width:52px;
+    height:52px;
+}
+
+.ac-card span {
+    max-width:100px;
+    overflow:hidden;
+    color:#ccc;
+    font-size:11px;
+    white-space:nowrap;
+    text-overflow:ellipsis;
+}
+
+.ac-card.won {
+    border-color:var(--rarity);
+    box-shadow:0 0 18px -2px var(--rarity);
+    transform:scale(1.04);
+    transition:transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ac-case-marker {
+    position:absolute;
+    top:0;
+    bottom:0;
+    left:50%;
+    width:2px;
+    margin-left:-1px;
+    background:#facc15;
+    box-shadow:0 0 8px #facc15;
+}
+
+.ac-case-marker.tick {
+    animation:ac-tick 0.12s ease-out;
+}
+
+@keyframes ac-tick {
+    from {
+        transform:scaleX(2.5);
+    }
+}
+
+.ac-case-result {
+    display:flex;
+    align-items:center;
+    gap:12px;
+    min-height:64px;
+    padding:0 18px;
+    opacity:0;
+    transition:opacity 0.25s ease;
+}
+
+.ac-case.done .ac-case-result {
+    opacity:1;
+}
+
+.ac-case-icon {
+    width:64px;
+    height:64px;
+    filter:drop-shadow(0 0 8px var(--rarity));
+}
+
+.ac-case-info {
+    display:grid;
+    gap:2px;
+}
+
+.ac-case-name {
+    font-size:17px;
+}
+
+.ac-case-info small {
+    color:#888;
+    font-size:12px;
+}
+
+.ac-case-actions {
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:8px;
+}
+
+.anecrawler .ac-case-use {
+    border-color:#63d69f;
+}
+
+
+/* ---------------- Pause and run summary ---------------- */
+
+.ac-overlay-box {
+    width:min(86%, 420px);
+    padding:20px;
+}
+
+.ac-overlay-box strong {
+    font-size:18px;
+}
+
+.ac-overlay-box small {
+    color:#888;
+    font-size:13px;
+    line-height:1.5;
+    text-align:center;
+}
+
+.ac-overlay-box .ac-row {
+    justify-content:center;
+    margin:0;
+}
+
+.ac-summary-found {
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    gap:6px;
+}
+
+.ac-summary-found img {
+    width:36px;
+    height:36px;
+    padding:2px;
+    background:#0b0b0b;
+    border:1px solid #333;
+    border-bottom:2px solid var(--rarity);
+    border-radius:6px;
+}
+
+
+/* ---------------- Small screens and touch ---------------- */
+
+@media (max-width:900px) {
+
+    .ac-layout {
+        grid-template-columns:1fr;
+    }
+
+    .ac-panel {
+        contain:none;
+        max-height:460px;
+    }
+
+    .anecrawler:hover .anecrawler-content,
+    .game-slot.focused .anecrawler .anecrawler-content {
+        max-height:1400px;
+    }
+
+}
+
+@media (hover:none) {
+
+    .anecrawler .anecrawler-content {
+        max-height:none;
+        margin-top:24px;
+        opacity:1;
+    }
+
+    .anecrawler .anecrawler-title {
+        color:white;
+    }
+
+    .ac-touch-note {
+        position:absolute;
+        right:10px;
+        bottom:10px;
+        left:10px;
+        display:block;
+        color:#888;
+        font-size:12px;
+        text-align:center;
+    }
+
+}
+
+.ac-summary-line {
+    white-space:pre-line;
+}
+
+
+/* ---------------- Play together ---------------- */
+
+.ac-coop {
+    margin-bottom:12px;
+    padding:10px 12px;
+    background:#1d1d1d;
+    border:1px solid #333;
+    border-radius:8px;
+}
+
+.ac-coop-head {
+    justify-content:space-between;
+    margin-bottom:8px;
+    color:#ccc;
+    font-size:13px;
+}
+
+.ac-coop-status {
+    color:#888;
+    font-size:12px;
+}
+
+.ac-coop-buttons {
+    gap:6px;
+    margin:0;
+}
+
+.anecrawler .ac-coop-buttons button {
+    flex:1;
+    padding:5px 8px;
+    font-size:12px;
+}

@@ -1,0 +1,76 @@
+<div class="game anecrawler">
+
+    <div class="anecrawler-header">
+        <h2 class="anecrawler-title">AneCrawler</h2>
+        <div class="anecrawler-stats">
+            <span class="ac-stat-where">Lobby</span>
+            <span class="ac-stat-shards">0 shards</span>
+            <span class="ac-stat-best">Best -</span>
+            <span class="ac-stat-bag">2 weapons</span>
+        </div>
+    </div>
+
+    <div class="anecrawler-content">
+
+        <div class="ac-layout">
+
+            <div class="ac-field">
+
+                <canvas class="ac-canvas"></canvas>
+
+                <div class="ac-case"></div>
+
+                <div class="ac-overlay ac-pause" hidden>
+                    <div class="ac-overlay-box">
+                        <strong>Paused</strong>
+                        <small>The run waits for you.</small>
+                        <div class="ac-row">
+                            <button class="ac-resume">Resume <kbd>Esc</kbd></button>
+                            <button class="ac-giveup">Give up run</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ac-overlay ac-summary" hidden>
+                    <div class="ac-overlay-box">
+                        <strong class="ac-summary-title"></strong>
+                        <small class="ac-summary-line"></small>
+                        <div class="ac-summary-found"></div>
+                        <button class="ac-summary-close">Back to the lobby <kbd>E</kbd></button>
+                    </div>
+                </div>
+
+                <div class="ac-touch-note">AneCrawler is played with a keyboard and mouse.</div>
+
+            </div>
+
+            <div class="ac-panel">
+
+                <div class="ac-row ac-run-row">
+                    <button class="ac-start">Start run</button>
+                    <button class="ac-world" title="Start from a world you have reached">From 1-1</button>
+                    <button class="ac-quit" title="End the run and go back to the lobby">Give up</button>
+                </div>
+
+                <div class="ac-bag-panel"></div>
+
+                <div class="ac-coop"></div>
+
+                <div class="ac-help">
+                    <b>WASD</b> move · <b>mouse</b> aim · <b>click</b> attack (hold to charge) ·
+                    <b>Space</b>/<b>right click</b> dash · <b>Q</b>/<b>wheel</b> swap ·
+                    <b>E</b> open / enter · <b>Esc</b> pause
+                </div>
+
+                <div class="ac-row ac-saves">
+                    <button class="ac-export">Export</button>
+                    <button class="ac-import">Import</button>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>

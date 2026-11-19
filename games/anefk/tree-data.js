@@ -53,14 +53,14 @@ export const TREE = [
 
 
     // right arm: golden orbs
-    {id:"sharp", name:"Sharper Orbs", desc:"x2 golden orb value",
-     cost:2, x:1, y:0, requires:["core"], effects:{golden:2}},
+    {id:"sharp", name:"Sharper Orbs", desc:"x1.5 golden orb value",
+     cost:2, x:1, y:0, requires:["core"], effects:{golden:1.5}},
 
-    {id:"focus", name:"Deep Focus", desc:"+30s of production in golden orbs",
-     cost:6, x:2, y:0, requires:["sharp"], effects:{goldenSeconds:30}},
+    {id:"focus", name:"Deep Focus", desc:"+15s of production in golden orbs",
+     cost:6, x:2, y:0, requires:["sharp"], effects:{goldenSeconds:15}},
 
-    {id:"surge", name:"Orb Surge", desc:"x3 golden orb value",
-     cost:18, x:3, y:0, requires:["focus"], effects:{golden:3}},
+    {id:"surge", name:"Orb Surge", desc:"x1.3 golden orb value",
+     cost:18, x:3, y:0, requires:["focus"], effects:{golden:1.3}},
 
     {id:"midas", name:"Midas Lure", desc:"Golden orbs appear 25% sooner",
      cost:14, x:2, y:-1, requires:["wide", "focus"], effects:{goldenDelay:0.75}},

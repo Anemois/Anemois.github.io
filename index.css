@@ -126,6 +126,12 @@ body {
 
 #games-full {
 
+    display:flex;
+
+    flex-direction:column;
+
+    gap:24px;
+
     width:100%;
 
     margin-top:24px;
@@ -214,7 +220,20 @@ body {
 
 .game-slot {
 
+    position:relative;
+
     min-width:0;
+
+}
+
+
+/* a clicked game stays open until you click outside it (see index.js) */
+
+.game-slot.focused > :first-child {
+
+    outline:1px solid #6b7280;
+
+    outline-offset:-1px;
 
 }
 
@@ -226,5 +245,136 @@ body {
         grid-template-columns:1fr;
 
     }
+
+}
+
+
+/* ---------------- Full screen ---------------- */
+
+.fullscreen-button {
+
+    position:absolute;
+
+    top:8px;
+
+    right:8px;
+
+    z-index:5;
+
+    display:grid;
+
+    place-items:center;
+
+    width:26px;
+
+    height:26px;
+
+    padding:0;
+
+    background:transparent;
+
+    border:none;
+
+    border-radius:6px;
+
+    color:#6b7280;
+
+    cursor:pointer;
+
+    opacity:0;
+
+    transition:
+        opacity 0.2s ease,
+        color 0.15s ease,
+        background 0.15s ease;
+
+}
+
+
+.game-slot:hover .fullscreen-button,
+.game-slot.focused .fullscreen-button,
+.fullscreen-button:focus-visible {
+
+    opacity:1;
+
+}
+
+
+.fullscreen-button:hover {
+
+    background:#232323;
+
+    color:white;
+
+}
+
+
+@media (hover:none) {
+
+    .fullscreen-button {
+
+        opacity:1;
+
+    }
+
+}
+
+
+/* the game in the middle of the screen, open, with nothing cut off */
+
+.game-slot:fullscreen {
+
+    display:flex;
+
+    padding:24px;
+
+    box-sizing:border-box;
+
+    overflow:auto;
+
+    background:rgb(6, 6, 6);
+
+}
+
+
+/* (!important: some games size their card with an id selector) */
+
+.game-slot:fullscreen > :first-child {
+
+    width:min(100%, 760px) !important;
+
+    margin:auto !important;
+
+    outline:none;
+
+}
+
+
+/* wide games fill the width, but no more than the screen's height allows
+   (their field is 16:9 beside a side panel) */
+
+.game-slot.full:fullscreen > :first-child {
+
+    width:min(100%, calc((100vh - 170px) * 2.37 + 84px)) !important;
+
+}
+
+
+.game-slot:fullscreen > :first-child > [class$="-content"] {
+
+    max-height:none !important;
+
+}
+
+
+.game-slot:fullscreen .fullscreen-button {
+
+    position:fixed;
+
+    top:12px;
+
+    right:12px;
+
+    opacity:1;
 
 }

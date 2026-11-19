@@ -20,7 +20,8 @@
     transition:color 0.2s ease;
 }
 
-.anefk:hover .anefk-title {
+.anefk:hover .anefk-title,
+.game-slot.focused .anefk .anefk-title {
     color:white;
 }
 
@@ -51,7 +52,8 @@
         opacity 0.2s ease;
 }
 
-.anefk:hover .anefk-content {
+.anefk:hover .anefk-content,
+.game-slot.focused .anefk .anefk-content {
     max-height:700px;
     margin-top:24px;
     opacity:1;
@@ -88,12 +90,47 @@
 .orb.golden {
     width:clamp(28px,4vw,52px);
     background:#facc15;
+}
+
+/* the glow is its own layer: the pulse only animates opacity (cheap),
+   and only while the card is open, since golden orbs now wait for you */
+.orb.golden::after {
+    content:"";
+    position:absolute;
+    inset:0;
+    border-radius:50%;
+    box-shadow:0 0 22px #facc15;
+    opacity:0.4;
+}
+
+.anefk:hover .orb.golden::after,
+.game-slot.focused .anefk .orb.golden::after {
     animation:golden-pulse 1s ease-in-out infinite alternate;
 }
 
 @keyframes golden-pulse {
-    from { box-shadow:0 0 6px rgba(250,204,21,0.4); }
-    to   { box-shadow:0 0 22px rgba(250,204,21,1); }
+    to { opacity:1; }
+}
+
+/* floating "+value" over a clicked orb */
+.pop {
+    position:absolute;
+    translate:-50% -50%;
+    color:#e5e5e5;
+    font-size:13px;
+    white-space:nowrap;
+    pointer-events:none;
+    animation:pop-rise 0.8s ease-out forwards;
+}
+
+.pop.golden {
+    color:#facc15;
+    font-size:18px;
+    font-weight:bold;
+}
+
+@keyframes pop-rise {
+    to { transform:translateY(-34px); opacity:0; }
 }
 
 .seeker {

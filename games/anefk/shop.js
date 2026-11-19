@@ -3,8 +3,9 @@ import {format, setText} from "./util.js";
 
 // Builds one list of buyable cards inside `element`.
 // items: [{id, name, max?}]
-// options: desc(item), level(item), cost(item, count), quantity(), onBuy(item, count)
-export function createShop(element, items, {desc, level, cost, quantity, onBuy}){
+// options: desc(item), level(item), cost(item, count), quantity(), onBuy(item, count),
+//          note(item)  optional extra line that follows the level (e.g. next milestone)
+export function createShop(element, items, {desc, level, cost, quantity, onBuy, note}){
 
     // how many levels a click buys: the chosen amount, capped by the item's max
     function countFor(item){
@@ -29,6 +30,7 @@ export function createShop(element, items, {desc, level, cost, quantity, onBuy})
             <strong>${item.name}</strong><br>
             <small>${desc(item)}</small><br>
             Level: <span class="level"></span><br>
+            ${note ? `<small class="note"></small><br>` : ""}
             Cost: <span class="cost"></span><br>
             <button></button>
             `;
@@ -46,6 +48,7 @@ export function createShop(element, items, {desc, level, cost, quantity, onBuy})
             card,
             button,
             levelText: card.querySelector(".level"),
+            noteText: note && card.querySelector(".note"),
             costText: card.querySelector(".cost")
         };
 
@@ -57,10 +60,13 @@ export function createShop(element, items, {desc, level, cost, quantity, onBuy})
     // `currency` is what the player can spend right now
     function update(currency){
 
-        for(const {item, button, levelText, costText} of rows){
+        for(const {item, button, levelText, noteText, costText} of rows){
 
             const current = level(item);
             const count = countFor(item);
+
+            if(noteText)
+                setText(noteText, note(item));
 
             if(count < 1){
 

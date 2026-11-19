@@ -6,7 +6,8 @@ import {
     SEEKER_SPEED,
     PRESTIGE_MIN,
     PRESTIGE_CONFIRM_MS,
-    BUY_AMOUNTS
+    BUY_AMOUNTS,
+    MILESTONE_BONUS
 } from "./data.js";
 
 import * as economy from "./economy.js";
@@ -17,7 +18,7 @@ import {createOrbs} from "./orbs.js";
 import {createGolden} from "./golden.js";
 import {createSeekers} from "./seekers.js";
 import {loadSave, newSave, writeSave, encodeSave, decodeSave, zeroLevels} from "./save.js";
-import {format, setText} from "./util.js";
+import {format, clock, setText} from "./util.js";
 
 
 export function init(container){
@@ -40,6 +41,13 @@ export function init(container){
     let mods = computeModifiers(save.tree);
     let confirmTimer = null;
     let hovered = false;
+    let frameId = 0;
+    let lastFrame = 0;
+
+    // the card is only open (and worth animating) while hovered in a visible tab
+    const isVisible = () => hovered && !document.hidden;
+
+    const seekerSpeed = () => SEEKER_SPEED * mods.seekerSpeed;
 
 
     const orbs = createOrbs($("#orb-field"), onOrbCollected);
@@ -66,6 +74,7 @@ export function init(container){
 
         createShop($("#helpers"), HELPERS, {
             desc: helper => `${format(helper.power)}/s each`,
+            note: helperNote,
             level: helper => save.helpers[helper.id],
             cost: (helper, count) => economy.helperCost(save, mods, helper, count),
             quantity: amount.get,
@@ -80,8 +89,19 @@ export function init(container){
     $("#import-save").onclick = importSave;
     ui.prestige.onclick = onPrestigeClick;
 
-    root.addEventListener("mouseenter", () => hovered = true);
+    root.addEventListener("mouseenter", () => {
+
+        hovered = true;
+
+        updateUI();         // the panel was not refreshing while collapsed
+
+        startFrames();
+
+    });
+
     root.addEventListener("mouseleave", () => hovered = false);
+
+    document.addEventListener("visibilitychange", startFrames);
 
     window.addEventListener("beforeunload", () => writeSave(save));
 
@@ -93,23 +113,26 @@ export function init(container){
 
     /* ---------------- Loops ---------------- */
 
+    // economy: setInterval keeps running in background tabs
     function startLoops(){
 
-        // economy: setInterval keeps running in background tabs
         let lastTick = Date.now();
         let ticks = 0;
 
         setInterval(() => {
 
             const now = Date.now();
-
-            addBlobs(economy.production(save, mods) * (now - lastTick) / 1000);
+            const dt = (now - lastTick) / 1000;
 
             lastTick = now;
 
-            orbs.fill(economy.orbCount(save, mods));
+            addBlobs(economy.production(save, mods) * dt);
 
-            golden.update(hovered && !document.hidden);
+            // collapsed card: seekers still collect, but without being drawn
+            if(!isVisible())
+                seekers.update(dt, seekerSpeed(), false);
+
+            golden.update();
 
             updateUI();
 
@@ -118,21 +141,37 @@ export function init(container){
 
         }, TICK_MS);
 
+    }
 
-        // seekers: smooth movement, only matters while the page is visible
-        let lastFrame = performance.now();
 
-        requestAnimationFrame(function frame(now){
+    // animation: runs only while the card is open, then stops by itself
+    function startFrames(){
 
-            const dt = Math.min((now - lastFrame) / 1000, 0.1);
+        if(frameId || !isVisible())
+            return;
 
-            lastFrame = now;
+        lastFrame = performance.now();
 
-            seekers.update(dt, SEEKER_SPEED * mods.seekerSpeed);
+        frameId = requestAnimationFrame(frame);
 
-            requestAnimationFrame(frame);
+    }
 
-        });
+
+    function frame(now){
+
+        if(!isVisible()){
+
+            frameId = 0;
+
+            return;
+
+        }
+
+        seekers.update(Math.min((now - lastFrame) / 1000, 0.1), seekerSpeed(), true);
+
+        lastFrame = now;
+
+        frameId = requestAnimationFrame(frame);
 
     }
 
@@ -149,17 +188,18 @@ export function init(container){
     }
 
 
+    // pays out an orb and returns the amount (orbs.js floats it over the orb)
     function onOrbCollected(isGolden){
 
-        addBlobs(
-            isGolden
-                ? economy.goldenValue(save, mods)
-                : economy.orbValue(save, mods)
-        );
+        const value = isGolden
+            ? economy.goldenValue(save, mods)
+            : economy.orbValue(save, mods);
 
-        orbs.fill(economy.orbCount(save, mods));
+        addBlobs(value);
 
         updateUI();
+
+        return value;
 
     }
 
@@ -169,7 +209,7 @@ export function init(container){
 
         seekers.setCount(economy.seekerCount(save, mods));
 
-        orbs.fill(economy.orbCount(save, mods));
+        orbs.setCount(economy.orbCount(save, mods));
 
     }
 
@@ -355,18 +395,54 @@ export function init(container){
 
     /* ---------------- UI ---------------- */
 
+    // the header is always visible; the panel only needs refreshing while open
     function updateUI(){
 
-        setText(ui.blobs, `${format(save.blobs)} blobs`);
-        setText(ui.rate, `${format(economy.production(save, mods))}/s`);
-        setText(ui.orb, `${format(economy.orbValue(save, mods))}/orb`);
-        setText(ui.golden, `${format(economy.goldenValue(save, mods))} golden`);
-        setText(ui.gold, `${format(save.gold)} gold`);
+        updateHeader();
+
+        if(!hovered)
+            return;
 
         for(const shop of shops)
             shop.update(save.blobs);
 
         updatePrestigeButton();
+
+    }
+
+
+    function updateHeader(){
+
+        setText(ui.blobs, `${format(save.blobs)} blobs`);
+        setText(ui.rate, `${format(economy.production(save, mods))}/s`);
+        setText(ui.orb, `${format(economy.orbValue(save, mods))}/orb`);
+        setText(ui.golden, goldenText());
+        setText(ui.gold, `${format(save.gold)} gold`);
+
+    }
+
+
+    // value of one golden orb, plus how many wait for you or when the next one comes
+    function goldenText(){
+
+        const value = `${format(economy.goldenValue(save, mods))} golden`;
+        const ready = orbs.goldenCount();
+
+        if(ready > 0)
+            return `${value} · ${ready} ready`;
+
+        return `${value} · in ${clock(golden.secondsLeft())}`;
+
+    }
+
+
+    function helperNote(helper){
+
+        const next = economy.nextMilestone(save.helpers[helper.id]);
+
+        return next === undefined
+            ? "all milestones reached"
+            : `x${MILESTONE_BONUS} output at level ${next}`;
 
     }
 

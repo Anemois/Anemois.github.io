@@ -32,6 +32,20 @@ const GAMES = [
         name:"anefk",
         full:true,
         order:0
+    },
+
+
+    {
+        name:"anetd",
+        full:true,
+        order:1
+    },
+
+
+    {
+        name:"anecrawler",
+        full:true,
+        order:2
     }
 
 ];
@@ -42,6 +56,17 @@ const GAME_ROOT =
         "./games/",
         import.meta.url
     );
+
+
+// what a game hears when the mouse leaves it (AneTAN uses pointer events)
+const LEAVE_EVENTS = [
+    "mouseleave",
+    "pointerleave"
+];
+
+
+// the game slot that was clicked, kept open until a click lands outside it
+let focused = null;
 
 
 document.addEventListener(
@@ -108,6 +133,22 @@ async function init(){
         wrapper.classList.add(
             "ready"
         );
+
+
+        document.addEventListener(
+            "pointerdown",
+            onPointerDown
+        );
+
+
+        for(const type of ["fullscreenchange", "webkitfullscreenchange"]){
+
+            document.addEventListener(
+                type,
+                updateFullscreenButtons
+            );
+
+        }
 
 
     }
@@ -185,7 +226,13 @@ async function loadGame(
 
 
     gameContainer.className =
-        "game-slot";
+        full ? "game-slot full" : "game-slot";
+
+
+    // registered before the game's own listeners, so it runs first
+    holdLeaveWhileFocused(
+        gameContainer
+    );
 
 
     targetColumn.appendChild(
@@ -263,6 +310,11 @@ async function loadGame(
         gameContainer
     );
 
+
+    addFullscreenButton(
+        gameContainer
+    );
+
 }
 
 
@@ -326,6 +378,301 @@ function loadCSS(url){
             );
 
         }
+    );
+
+}
+
+
+/* ---------------- Focus ---------------- */
+// Games open while hovered: their CSS uses :hover and their scripts listen
+// for the mouse leaving. Clicking a game focuses it, so it stays open:
+//  - its slot gets the "focused" class, which each game's CSS treats like
+//    :hover (".game-slot.focused #game ..." next to "#game:hover ...")
+//  - the leave events of its card never reach the game, so its scripts go
+//    on as if the mouse were still there (keys keep working too)
+// A click outside unfocuses it; if the mouse is elsewhere by then, the game
+// gets the leave events it missed and closes as usual.
+
+
+function onPointerDown(event){
+
+    const slot =
+        event.target.closest?.(
+            ".game-slot"
+        ) ?? null;
+
+
+    if(slot !== focused){
+
+        setFocus(
+            slot
+        );
+
+    }
+
+}
+
+
+function setFocus(slot){
+
+    const previous =
+        focused;
+
+
+    focused =
+        slot;
+
+
+    previous?.classList.remove(
+        "focused"
+    );
+
+
+    slot?.classList.add(
+        "focused"
+    );
+
+
+    if(
+        previous
+        && !previous.matches(":hover")
+    ){
+
+        sendLeave(
+            previous
+        );
+
+    }
+
+}
+
+
+// Only the card's own leave events are held back (the slot and the game's
+// root element): leaving a canvas or a button inside it still counts.
+function holdLeaveWhileFocused(slot){
+
+    for(const type of LEAVE_EVENTS){
+
+        slot.addEventListener(
+            type,
+            event => {
+
+                const card =
+                    event.target === slot
+                    || event.target === slot.firstElementChild;
+
+
+                if(
+                    slot === focused
+                    && card
+                    && event.isTrusted
+                ){
+
+                    event.stopImmediatePropagation();
+
+                }
+
+            },
+            true
+        );
+
+    }
+
+}
+
+
+// games listen on the slot or on their root element, so both get them
+function sendLeave(slot){
+
+    for(const target of [slot, slot.firstElementChild]){
+
+        if(!target){
+
+            continue;
+
+        }
+
+
+        target.dispatchEvent(
+            new MouseEvent("mouseleave")
+        );
+
+
+        target.dispatchEvent(
+            new PointerEvent(
+                "pointerleave",
+                {pointerType: "mouse"}
+            )
+        );
+
+    }
+
+}
+
+
+/* ---------------- Full screen ---------------- */
+// Every game gets a small button in its top right corner that fills the
+// screen with it. A game in full screen is also focused, so it stays open;
+// Esc (or the button again) leaves full screen.
+
+
+const EXPAND_ICON =
+    `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/>
+    </svg>`;
+
+const SHRINK_ICON =
+    `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4"/>
+    </svg>`;
+
+
+const fullscreenElement = () =>
+    document.fullscreenElement
+    ?? document.webkitFullscreenElement
+    ?? null;
+
+
+function addFullscreenButton(slot){
+
+    // iPhones only allow videos to go full screen
+    if(
+        !document.fullscreenEnabled
+        && !document.webkitFullscreenEnabled
+    ){
+
+        return;
+
+    }
+
+
+    const button =
+        document.createElement(
+            "button"
+        );
+
+
+    button.type =
+        "button";
+
+    button.className =
+        "fullscreen-button";
+
+
+    // the button sits on the slot, beside the game: keep its clicks from
+    // reaching games that listen on their slot (click speed would count them)
+    for(const type of ["pointerdown", "mousedown", "click"]){
+
+        button.addEventListener(
+            type,
+            event => event.stopPropagation()
+        );
+
+    }
+
+
+    button.addEventListener(
+        "click",
+        () => {
+
+            // so Space and Enter go to the game, not back to this button
+            button.blur();
+
+            toggleFullscreen(
+                slot
+            );
+
+        }
+    );
+
+
+    slot.appendChild(
+        button
+    );
+
+
+    showFullscreenState(
+        slot,
+        button
+    );
+
+}
+
+
+function toggleFullscreen(slot){
+
+    if(fullscreenElement() === slot){
+
+        (document.exitFullscreen ?? document.webkitExitFullscreen)
+            ?.call(document);
+
+        return;
+
+    }
+
+
+    setFocus(
+        slot
+    );
+
+
+    const request =
+        slot.requestFullscreen
+        ?? slot.webkitRequestFullscreen;
+
+
+    Promise.resolve(
+        request?.call(slot)
+    ).catch(
+        () => {}
+    );
+
+}
+
+
+function updateFullscreenButtons(){
+
+    for(const button of document.querySelectorAll(".fullscreen-button")){
+
+        showFullscreenState(
+            button.parentElement,
+            button
+        );
+
+    }
+
+
+    // left full screen with the mouse elsewhere: close like a normal click outside
+    const slot =
+        fullscreenElement();
+
+
+    if(slot){
+
+        setFocus(
+            slot
+        );
+
+    }
+
+}
+
+
+function showFullscreenState(slot, button){
+
+    const on =
+        fullscreenElement() === slot;
+
+
+    button.innerHTML =
+        on ? SHRINK_ICON : EXPAND_ICON;
+
+    button.title =
+        on ? "Exit full screen (Esc)" : "Full screen";
+
+    button.setAttribute(
+        "aria-label",
+        button.title
     );
 
 }

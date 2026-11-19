@@ -201,8 +201,16 @@ export function init(container) {
             availableWidth / COLS;
 
 
+        // in full screen the board may grow to fill the height
+        const fullscreen =
+            Boolean(
+                (document.fullscreenElement ?? document.webkitFullscreenElement)
+                    ?.contains(container)
+            );
+
+
         const heightLimit =
-            (window.innerHeight * 0.65)
+            (window.innerHeight * (fullscreen ? 0.78 : 0.65))
             / ROWS;
 
 
@@ -211,7 +219,7 @@ export function init(container) {
                 10,
                 Math.floor(
                     Math.min(
-                        22,
+                        fullscreen ? 44 : 22,
                         widthLimit,
                         heightLimit
                     )

@@ -1,0 +1,598 @@
+.anetd {
+    width:100%;
+    min-width:0;
+    min-height:44px;
+    padding:30px;
+    box-sizing:border-box;
+    background:#141414;
+    border:1px solid #374151;
+    border-radius:15px;
+    color:white;
+    text-align:left;
+    user-select:none;
+}
+
+.anetd-title {
+    margin:0;
+    color:gray;
+    font-size:24px;
+    line-height:1;
+    transition:color 0.2s ease;
+}
+
+.anetd:hover .anetd-title,
+.game-slot.focused .anetd .anetd-title {
+    color:white;
+}
+
+.anetd-header {
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:20px;
+}
+
+.anetd-stats {
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+    gap:6px 20px;
+    color:#888;
+}
+
+.anetd-content {
+    display:grid;
+    grid-template-columns:minmax(0, 1fr);
+    max-height:0;
+    margin-top:0;
+    opacity:0;
+    overflow:hidden;
+    transition:
+        max-height 0.25s ease,
+        margin-top 0.2s ease,
+        opacity 0.2s ease;
+}
+
+.anetd:hover .anetd-content,
+.game-slot.focused .anetd .anetd-content {
+    max-height:760px;
+    margin-top:24px;
+    opacity:1;
+}
+
+
+/* ---------------- Layout ---------------- */
+
+.anetd [hidden] {
+    display:none !important;
+}
+
+.td-layout {
+    display:grid;
+    grid-template-columns:minmax(0, 3fr) minmax(240px, 1fr);
+    gap:24px;
+    align-items:start;
+}
+
+.td-field {
+    aspect-ratio:16 / 9;
+    background:#0b0b0b;
+    border:1px solid #333;
+    border-radius:10px;
+    overflow:hidden;
+}
+
+.td-canvas {
+    display:block;
+    width:100%;
+    height:100%;
+    cursor:default;
+}
+
+.td-canvas.pointer {
+    cursor:pointer;
+}
+
+.td-canvas.placing {
+    cursor:crosshair;
+}
+
+/* the panel never makes the card taller than the field: it scrolls instead */
+.td-panel {
+    align-self:stretch;
+    contain:size;
+    overflow-y:auto;
+    padding-right:4px;
+    scrollbar-width:thin;
+}
+
+
+/* ---------------- Buttons ---------------- */
+
+.anetd button {
+    background:#232323;
+    border:1px solid #555;
+    border-radius:6px;
+    color:white;
+    padding:8px 14px;
+    cursor:pointer;
+    transition:
+        background 0.15s ease,
+        transform 0.15s ease;
+}
+
+.anetd button:hover {
+    background:#303030;
+}
+
+.anetd button:active {
+    transform:scale(0.95);
+}
+
+.anetd button:disabled {
+    opacity:0.4;
+    cursor:not-allowed;
+}
+
+.anetd button:disabled:hover {
+    background:#232323;
+}
+
+.anetd button:disabled:active {
+    transform:none;
+}
+
+.anetd button.active {
+    background:#303030;
+    border-color:#e5e5e5;
+}
+
+.anetd .td-ascend.armed {
+    background:#7f1d1d;
+    border-color:#ef4444;
+}
+
+.anetd .td-ascend.armed:hover {
+    background:#991b1b;
+}
+
+
+/* ---------------- Panel ---------------- */
+
+.td-row {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:8px;
+    margin-bottom:12px;
+}
+
+.td-controls {
+    gap:6px;
+}
+
+.anetd .td-controls button {
+    padding:5px 9px;
+}
+
+.td-wave-label {
+    min-width:56px;
+    color:#ccc;
+    font-size:13px;
+    text-align:center;
+}
+
+.anetd .td-meta button,
+.anetd .td-saves button {
+    padding:6px 10px;
+}
+
+.anetd .td-meta .td-ascend {
+    flex:1;
+}
+
+.td-saves {
+    margin:14px 0 2px;
+}
+
+.anetd .td-tabs {
+    gap:6px;
+    margin-bottom:10px;
+}
+
+.anetd .td-tabs button {
+    flex:1;
+    padding:6px 0;
+    font-size:12px;
+}
+
+.td-buy {
+    display:flex;
+    align-items:center;
+    gap:6px;
+    margin-bottom:10px;
+    color:#888;
+    font-size:13px;
+}
+
+.td-buy::before {
+    content:"Buy";
+    margin-right:4px;
+}
+
+.anetd .td-buy button {
+    padding:4px 10px;
+    font-size:12px;
+}
+
+.td-tab {
+    display:none;
+}
+
+.td-tab.shown {
+    display:block;
+}
+
+.td-hint {
+    color:#666;
+    font-size:12px;
+    line-height:1.4;
+}
+
+.td-troop-summary {
+    margin-bottom:10px;
+}
+
+.anetd .td-autobuy {
+    padding:5px 10px;
+    font-size:12px;
+}
+
+
+/* ---------------- Cards ---------------- */
+
+.td-card,
+.td-insp-box {
+    display:grid;
+    gap:3px;
+    margin-bottom:8px;
+    padding:10px 12px;
+    background:#1d1d1d;
+    border:1px solid #333;
+    border-radius:8px;
+}
+
+.td-card-head,
+.td-insp-head {
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
+.td-card-level,
+.td-insp-level {
+    margin-left:auto;
+    color:#888;
+    font-size:12px;
+}
+
+.td-card small,
+.td-insp-box small {
+    color:#888;
+    font-size:12px;
+    line-height:1.35;
+}
+
+.td-card-note:empty {
+    display:none;
+}
+
+.td-card-buttons {
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    margin-top:6px;
+}
+
+.anetd .td-card button {
+    padding:5px 8px;
+    font-size:12px;
+}
+
+.anetd .td-card button.short {
+    opacity:0.55;
+}
+
+.td-card.locked {
+    opacity:0.45;
+}
+
+.td-card.locked .td-card-level,
+.td-card.locked .td-card-note,
+.td-card.locked .td-card-buttons {
+    display:none;
+}
+
+.td-icon {
+    flex:none;
+    width:18px;
+    height:18px;
+}
+
+
+/* ---------------- Selected tower ---------------- */
+
+.td-inspect {
+    margin-bottom:12px;
+}
+
+.td-insp-icon {
+    display:flex;
+}
+
+.anetd .td-insp-close {
+    padding:0 2px 0 6px;
+    background:none;
+    border:none;
+    color:#888;
+    font-size:16px;
+    line-height:1;
+}
+
+.anetd .td-insp-close:hover {
+    background:none;
+    color:white;
+}
+
+.td-paths {
+    display:grid;
+    gap:6px;
+    margin:6px 0;
+}
+
+.td-path {
+    display:grid;
+    gap:3px;
+    padding:7px 8px;
+    background:#171717;
+    border:1px solid #2a2a2a;
+    border-radius:6px;
+}
+
+.td-path.closed {
+    opacity:0.5;
+}
+
+.td-path-head {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    color:#ccc;
+    font-size:12px;
+}
+
+.td-pips {
+    display:flex;
+    gap:3px;
+}
+
+.td-pips i {
+    width:12px;
+    height:5px;
+    background:#2e2e2e;
+    border-radius:2px;
+}
+
+.td-pips i.on {
+    background:#e5e5e5;
+}
+
+.anetd .td-path-buy {
+    justify-self:start;
+    margin-top:2px;
+    padding:4px 10px;
+    font-size:12px;
+}
+
+.td-insp-actions {
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+}
+
+.anetd .td-insp-actions button {
+    padding:5px 10px;
+    font-size:12px;
+}
+
+
+/* ---------------- Constellation ---------------- */
+
+.td-sky {
+    display:none;
+    flex-direction:column;
+    gap:12px;
+    height:620px;
+    min-height:0;
+}
+
+.anetd.sky-open .td-layout {
+    display:none;
+}
+
+.anetd.sky-open .td-sky {
+    display:flex;
+}
+
+.td-sky-header {
+    display:flex;
+    align-items:center;
+    gap:20px;
+}
+
+.td-sky-header h3 {
+    margin:0 auto 0 0;
+    color:#aaa;
+    font-size:16px;
+}
+
+.td-sky-stars {
+    color:#facc15;
+}
+
+.td-sky-viewport {
+    display:flex;
+    flex:1;
+    min-height:0;
+    overflow:auto;
+    background:#0b0b0b;
+    border:1px solid #333;
+    border-radius:10px;
+    scrollbar-width:thin;
+}
+
+.td-sky-map {
+    position:relative;
+    flex:none;
+    margin:auto;
+}
+
+.td-sky-links {
+    position:absolute;
+    inset:0;
+    pointer-events:none;
+}
+
+.td-sky-links line {
+    stroke:#222;
+    stroke-width:1.5;
+    transition:stroke 0.2s ease;
+}
+
+.td-sky-links line.open {
+    stroke:#4a4a4a;
+}
+
+.td-sky-links line.owned {
+    stroke:#cfcfcf;
+}
+
+.td-sky-dust {
+    fill:#2c2c2c;
+}
+
+.anetd .td-star {
+    position:absolute;
+    translate:-50% -7px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:3px;
+    width:104px;
+    padding:0;
+    background:none;
+    border:none;
+    color:#4a4a4a;
+    font-size:11px;
+    line-height:1.2;
+}
+
+.anetd .td-star:hover {
+    background:none;
+    color:#bbb;
+}
+
+.td-star i {
+    width:14px;
+    height:14px;
+    box-sizing:border-box;
+    background:#0b0b0b;
+    border:1.5px solid #333;
+    border-radius:50%;
+    transition:
+        background 0.2s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+/* labels mask the links that run behind them */
+.td-star span,
+.td-star small {
+    padding:0 4px;
+    background:#0b0b0b;
+    border-radius:3px;
+}
+
+.td-star small {
+    font-size:10px;
+    opacity:0.8;
+}
+
+.anetd .td-star.open {
+    color:#999;
+}
+
+.td-star.open i {
+    border-color:#777;
+}
+
+.anetd .td-star.can-buy {
+    color:white;
+}
+
+.td-star.can-buy i {
+    border-color:#facc15;
+    box-shadow:0 0 8px rgba(250, 204, 21, 0.6);
+}
+
+.anetd .td-star.owned {
+    color:#e5e5e5;
+    cursor:default;
+}
+
+.td-star.owned i {
+    background:white;
+    border-color:white;
+    box-shadow:0 0 10px rgba(255, 255, 255, 0.8);
+}
+
+.td-sky-info {
+    min-height:18px;
+    color:#888;
+    font-size:13px;
+}
+
+
+/* ---------------- Small screens and touch ---------------- */
+
+@media (max-width:900px) {
+
+    .td-layout {
+        grid-template-columns:1fr;
+    }
+
+    .td-panel {
+        contain:none;
+        max-height:460px;
+    }
+
+    .anetd:hover .anetd-content,
+    .game-slot.focused .anetd .anetd-content {
+        max-height:1400px;
+    }
+
+}
+
+@media (hover:none) {
+
+    .anetd .anetd-content {
+        max-height:none;
+        margin-top:24px;
+        opacity:1;
+    }
+
+    .anetd .anetd-title {
+        color:white;
+    }
+
+}

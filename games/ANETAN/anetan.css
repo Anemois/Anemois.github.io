@@ -37,7 +37,8 @@
 }
 
 
-#anetan:hover .anetan-title {
+#anetan:hover .anetan-title,
+.game-slot.focused #anetan .anetan-title {
     color: white;
 }
 
@@ -52,7 +53,8 @@
 }
 
 
-#anetan:hover #anetan-highscore {
+#anetan:hover #anetan-highscore,
+.game-slot.focused #anetan #anetan-highscore {
     opacity: 1;
 }
 
@@ -77,7 +79,8 @@
 }
 
 
-#anetan:hover .anetan-content {
+#anetan:hover .anetan-content,
+.game-slot.focused #anetan .anetan-content {
     max-height: 650px;
     margin-top: 16px;
     opacity: 1;

@@ -2,6 +2,8 @@ import {
     HELPERS,
     HELPER_GROWTH,
     FASTER_BONUS,
+    MILESTONES,
+    MILESTONE_BONUS,
     ORB_SECONDS,
     GOLDEN_SECONDS,
     GOLDEN_WEIGHT_SECONDS,
@@ -16,14 +18,45 @@ import {
 const level = (save, id) => save.upgrades[id] || 0;
 
 
+/* ---------------- Milestones ---------------- */
+
+// x2 output for every milestone a helper level has reached
+function milestoneMultiplier(count){
+
+    let multiplier = 1;
+
+    for(const milestone of MILESTONES){
+
+        if(count < milestone)
+            break;
+
+        multiplier *= MILESTONE_BONUS;
+
+    }
+
+    return multiplier;
+
+}
+
+
+// next level that doubles a helper, or undefined once all are reached
+export const nextMilestone = count =>
+    MILESTONES.find(milestone => milestone > count);
+
+
 /* ---------------- Income ---------------- */
 
 export function production(save, mods){
 
     let base = 0;
 
-    for(const helper of HELPERS)
-        base += save.helpers[helper.id] * helper.power;
+    for(const helper of HELPERS){
+
+        const count = save.helpers[helper.id];
+
+        base += count * helper.power * milestoneMultiplier(count);
+
+    }
 
     return (
         base *

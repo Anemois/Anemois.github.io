@@ -46,11 +46,13 @@
     transition: opacity 0.2s ease;
 }
 
-#speed:hover .speed-title {
+#speed:hover .speed-title,
+.game-slot.focused #speed .speed-title {
     color: white;
 }
 
-#speed:hover .highscore {
+#speed:hover .highscore,
+.game-slot.focused #speed .highscore {
     opacity: 1;
 }
 
@@ -97,7 +99,8 @@
     transition: opacity 0.2s ease;
 }
 
-#speed:hover .hover-appear {
+#speed:hover .hover-appear,
+.game-slot.focused #speed .hover-appear {
     opacity: 1;
 }
 

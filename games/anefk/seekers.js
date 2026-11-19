@@ -1,6 +1,10 @@
+const MAX_TRIPS = 8;    // orbs one seeker can collect in a single update
+
+
 export function createSeekers(field, orbs){
 
     const seekers = [];     // {el, x, y}
+    const claimed = new Set();
 
 
     function add(){
@@ -43,45 +47,61 @@ export function createSeekers(field, orbs){
     }
 
 
+    // Moves every seeker `speed * dt` pixels along its trips, collecting orbs on
+    // the way. Works for any dt, so while the card is collapsed (animate = false)
+    // the game can step it coarsely without drawing and earn the same income.
     // dt in seconds, speed in px/s
-    function update(dt, speed){
+    function update(dt, speed, animate){
 
-        if(!field.clientWidth)
+        if(!seekers.length || !field.clientWidth)
             return;
 
         // seekers spread out over different orbs when there are several
-        const claimed = new Set();
+        claimed.clear();
 
         for(const seeker of seekers){
 
-            const target = orbs.nearest(seeker.x, seeker.y, claimed);
+            let budget = speed * dt;
+            let angle = 0;
 
-            if(!target)
-                continue;
+            for(let trip = 0; budget > 0 && trip < MAX_TRIPS; trip++){
 
-            claimed.add(target);
+                const target = orbs.nearest(seeker.x, seeker.y, claimed);
 
-            const dx = target.x - seeker.x;
-            const dy = target.y - seeker.y;
-            const distance = Math.hypot(dx, dy);
-            const step = speed * dt;
+                if(!target)
+                    break;
 
-            if(distance <= target.r + step){
+                claimed.add(target);
 
-                seeker.x = target.x;
-                seeker.y = target.y;
+                const dx = target.x - seeker.x;
+                const dy = target.y - seeker.y;
+                const distance = Math.hypot(dx, dy);
 
-                orbs.collect(target);
+                angle = Math.atan2(dy, dx);
+
+                if(distance <= target.r + budget){
+
+                    budget -= distance;
+
+                    seeker.x = target.x;
+                    seeker.y = target.y;
+
+                    orbs.collect(target);
+
+                }
+                else{
+
+                    seeker.x += dx / distance * budget;
+                    seeker.y += dy / distance * budget;
+
+                    budget = 0;
+
+                }
 
             }
-            else{
 
-                seeker.x += dx / distance * step;
-                seeker.y += dy / distance * step;
-
-            }
-
-            draw(seeker, Math.atan2(dy, dx));
+            if(animate)
+                draw(seeker, angle);
 
         }
 

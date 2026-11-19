@@ -1,0 +1,88 @@
+<div class="game anetd">
+
+    <div class="anetd-header">
+        <h2 class="anetd-title">AneTD</h2>
+        <div class="anetd-stats">
+            <span class="td-stat-wave">Wave 1</span>
+            <span class="td-stat-gold">0 gold</span>
+            <span class="td-stat-rate">0/s</span>
+            <span class="td-stat-stars">0 stars</span>
+        </div>
+    </div>
+
+    <div class="anetd-content">
+
+        <div class="td-layout">
+
+            <div class="td-field">
+                <canvas class="td-canvas"></canvas>
+            </div>
+
+            <div class="td-panel">
+
+                <div class="td-row td-controls">
+                    <button class="td-prev" title="Previous wave">&lsaquo;</button>
+                    <span class="td-wave-label">Wave 1</span>
+                    <button class="td-next" title="Next wave">&rsaquo;</button>
+                    <button class="td-auto" title="Move on to the next wave after a clear">Auto</button>
+                    <button class="td-speed" title="Game speed">x1</button>
+                </div>
+
+                <div class="td-row td-meta">
+                    <button class="td-open-sky">Stars</button>
+                    <button class="td-ascend">Ascend</button>
+                </div>
+
+                <div class="td-inspect"></div>
+
+                <div class="td-row td-tabs">
+                    <button data-tab="towers">Towers</button>
+                    <button data-tab="troops">Troops</button>
+                    <button data-tab="upgrades">Upgrades</button>
+                </div>
+
+                <div class="td-buy"></div>
+
+                <div class="td-tab" data-tab="towers">
+                    <div class="td-row td-autobuy-row">
+                        <button class="td-autobuy" title="Quartermaster: spends half your gold on the cheapest tower type levels">Autobuy</button>
+                        <span class="td-hint">levels placed types</span>
+                    </div>
+                    <div class="td-tower-list"></div>
+                </div>
+
+                <div class="td-tab" data-tab="troops">
+                    <div class="td-troop-summary"></div>
+                    <div class="td-troop-list"></div>
+                </div>
+
+                <div class="td-tab" data-tab="upgrades"></div>
+
+                <div class="td-row td-saves">
+                    <button class="td-export">Export</button>
+                    <button class="td-import">Import</button>
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="td-sky">
+
+            <div class="td-sky-header">
+                <h3>Constellation</h3>
+                <span class="td-sky-stars">0 stars</span>
+                <button class="td-sky-close">Close</button>
+            </div>
+
+            <div class="td-sky-viewport">
+                <div class="td-sky-map"></div>
+            </div>
+
+            <div class="td-sky-info"></div>
+
+        </div>
+
+    </div>
+
+</div>

@@ -34,7 +34,8 @@
     transition: color 0.2s ease;
 }
 
-#reaction:hover .reaction-title {
+#reaction:hover .reaction-title,
+.game-slot.focused #reaction .reaction-title {
     color: white;
 }
 
@@ -47,7 +48,8 @@
     transition: opacity 0.2s ease;
 }
 
-#reaction:hover #reaction-highscore {
+#reaction:hover #reaction-highscore,
+.game-slot.focused #reaction #reaction-highscore {
     opacity: 1;
 }
 
@@ -119,7 +121,8 @@
     opacity: 0;
 }
 
-#reaction:hover .hover-appear {
+#reaction:hover .hover-appear,
+.game-slot.focused #reaction .hover-appear {
     opacity: 1;
 }
 
