@@ -1,7 +1,7 @@
 import {TILE} from "../sim/data.js";
 import {weaponStats, rarityOf, floorName} from "../sim/loot.js";
 import {drawWeapon, weaponBounds} from "./sprites.js";
-import {label} from "./draw.js";
+import {label, diamond} from "./draw.js";
 
 
 // Everything drawn on top of the world, in screen pixels: health bars,
@@ -10,9 +10,14 @@ import {label} from "./draw.js";
 const MAP_W = 132;              // minimap size on screen
 const MAP_H = 100;
 const MAP_ZOOM = 2;             // screen pixels per tile
+const BIG_PAD = 6;              // tiles of dark kept round the explored part on the full map
+const BIG_ZOOM = 9;             // the full map never zooms in further than this
 
 
 export function createHud(ctx, effects, fog){
+
+    let mapOpen = false;
+    let mapFade = 0;
 
     function panel(x, y, w, h){
 
@@ -62,11 +67,22 @@ export function createHud(ctx, effects, fog){
 
         if(state.mode === "run"){
 
-            minimap(state, me, view);
-            compass(state, me, view);
+            mapFade = Math.max(0, Math.min(1, mapFade + (mapOpen ? 0.2 : -0.25)));
+
+            if(mapFade < 1){
+
+                minimap(state, me, view);
+                compass(state, me, view);
+
+            }
+
+            if(mapFade > 0)
+                fullMap(state, me, view);
 
         }
         else{
+
+            mapOpen = false;
 
             label(ctx, "WASD move · mouse aim · click attack · Space dash · Q swap · E use", 12, H - 14, {colour: "#6b7280", size: 11, align: "left"});
 
@@ -224,8 +240,14 @@ export function createHud(ctx, effects, fog){
             if(prop.kind === "chest" && !prop.opened.includes(me.id))
                 mark(prop.x, prop.y, prop.source === "boss" ? "#facc15" : "#e5e5e5");
 
-            if(prop.kind === "portal")
+            if(prop.kind === "portal"){
+
+                if(prop.locked > 0)
+                    mark(prop.x, prop.y, "#ff5c7a", 8);
+
                 mark(prop.x, prop.y, prop.target === "home" ? "#9ca3af" : "#61a8ff", 5);
+
+            }
 
         }
 
@@ -240,6 +262,254 @@ export function createHud(ctx, effects, fog){
             ctx.fill();
 
         }
+
+        ctx.restore();
+
+    }
+
+
+    // The whole explored floor (M): the same picture as the minimap, as big
+    // as the screen allows, with everything you know of marked and named.
+    function fullMap(state, me, view){
+
+        const map = state.map;
+        const box = fog.bounds();
+        const {W, H} = view;
+
+        ctx.save();
+        ctx.globalAlpha = mapFade;
+
+        ctx.fillStyle = "rgba(6, 6, 9, 0.84)";
+        ctx.fillRect(0, 0, W, H);
+
+        label(ctx, `${floorName(state.floor)} · ${view.world.name}`, W / 2, 26, {colour: "#e5e5e5", size: 15, bold: true});
+        label(ctx, "M or Esc to close", W / 2, 44, {colour: "#6b7280", size: 11});
+
+        if(!box){
+
+            ctx.restore();
+
+            return;
+
+        }
+
+        // what to show, in tiles: the explored part with a margin, kept
+        // inside the floor
+        const x0 = Math.max(0, box.x0 - BIG_PAD);
+        const y0 = Math.max(0, box.y0 - BIG_PAD);
+        const x1 = Math.min(map.w, box.x1 + 1 + BIG_PAD);
+        const y1 = Math.min(map.h, box.y1 + 1 + BIG_PAD);
+        const cols = x1 - x0;
+        const rows = y1 - y0;
+
+        const room = {x: 24, y: 60, w: W - 48, h: H - 60 - 64};
+        let zoom = Math.min(room.w / cols, room.h / rows, BIG_ZOOM);
+
+        if(zoom >= 2)
+            zoom = Math.floor(zoom);
+
+        const mw = cols * zoom;
+        const mh = rows * zoom;
+        const left = Math.round(room.x + (room.w - mw) / 2);
+        const top = Math.round(room.y + (room.h - mh) / 2);
+
+        const sx = x => left + (x / TILE - x0) * zoom;
+        const sy = y => top + (y / TILE - y0) * zoom;
+
+        panel(left - 8, top - 8, mw + 16, mh + 16);
+
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(fog.mini, x0, y0, cols, rows, left, top, mw, mh);
+        ctx.imageSmoothingEnabled = true;
+
+        // the unexplored edges get a dot each, so they stand out from rock
+        if(zoom >= 3){
+
+            const dot = Math.max(1.5, zoom * 0.34);
+
+            ctx.fillStyle = "rgba(196, 196, 214, 0.55)";
+
+            for(let ty = y0; ty < y1; ty++)
+                for(let tx = x0; tx < x1; tx++)
+                    if(fog.frontier(ty * map.w + tx))
+                        ctx.fillRect(left + (tx - x0 + 0.5) * zoom - dot / 2, top + (ty - y0 + 0.5) * zoom - dot / 2, dot, dot);
+
+        }
+
+        const s = Math.max(3, Math.min(7, zoom * 0.9));       // marker size
+
+        // what is in view right now: enemies you can see
+        ctx.fillStyle = "#ff5c7a";
+
+        for(const e of state.enemies){
+
+            if(e.dead || e.dummy || !fog.sees(e.x, e.y))
+                continue;
+
+            ctx.beginPath();
+            ctx.arc(sx(e.x), sy(e.y), e.boss ? s * 0.9 : s * 0.45, 0, Math.PI * 2);
+            ctx.fill();
+
+        }
+
+        for(const prop of state.props){
+
+            if(!fog.knows(prop.x, prop.y))
+                continue;
+
+            const x = sx(prop.x);
+            const y = sy(prop.y);
+
+            if(prop.kind === "chest" && !prop.opened.includes(me.id)){
+
+                ctx.fillStyle = prop.source === "boss" ? "#facc15" : "#e5e5e5";
+                ctx.fillRect(x - s * 0.6, y - s * 0.45, s * 1.2, s * 0.9);
+
+            }
+
+            if(prop.kind === "portal"){
+
+                const home = prop.target === "home";
+                const colour = home ? "#9ca3af" : "#61a8ff";
+
+                ctx.strokeStyle = colour;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(x, y, s * 1.1, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.fillStyle = colour;
+                ctx.beginPath();
+                ctx.arc(x, y, s * 0.45, 0, Math.PI * 2);
+                ctx.fill();
+
+                if(prop.locked > 0){
+
+                    ctx.strokeStyle = "#ff5c7a";
+                    ctx.setLineDash([3, 3]);
+                    ctx.beginPath();
+                    ctx.arc(x, y, s * 1.7, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                }
+
+                const text = home ? "way home" : "way on";
+                const note = prop.locked > 0 ? ` · sealed (${prop.locked})` : "";
+
+                label(ctx, text + note, x, y - s * 1.7 - 9, {colour: prop.locked > 0 ? "#fda4af" : colour, size: 10, bold: true});
+
+            }
+
+        }
+
+        if(map.arena && fog.knows(map.arena.x, map.arena.y) && state.enemies.some(e => e.boss && !e.dead)){
+
+            const x = sx(map.arena.x);
+            const y = sy(map.arena.y);
+
+            ctx.fillStyle = "#ff5c7a";
+            diamond(ctx, x, y, s * 1.1, s * 1.1);
+
+            label(ctx, "boss", x, y - s * 1.1 - 9, {colour: "#ff5c7a", size: 10, bold: true});
+
+        }
+
+        for(const p of state.players){
+
+            const x = sx(p.x);
+            const y = sy(p.y);
+            const colour = p === me ? "#ffffff" : "#63d69f";
+
+            if(p.dead){
+
+                ctx.strokeStyle = "#ff5c7a";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x - s * 0.7, y - s * 0.7);
+                ctx.lineTo(x + s * 0.7, y + s * 0.7);
+                ctx.moveTo(x + s * 0.7, y - s * 0.7);
+                ctx.lineTo(x - s * 0.7, y + s * 0.7);
+                ctx.stroke();
+
+            }
+            else{
+
+                // which way they face
+                const a = p.aim ?? 0;
+
+                ctx.fillStyle = colour;
+                ctx.beginPath();
+                ctx.moveTo(x + Math.cos(a) * s * 1.4, y + Math.sin(a) * s * 1.4);
+                ctx.lineTo(x + Math.cos(a + 2.5) * s * 0.9, y + Math.sin(a + 2.5) * s * 0.9);
+                ctx.lineTo(x + Math.cos(a - 2.5) * s * 0.9, y + Math.sin(a - 2.5) * s * 0.9);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.strokeStyle = "#0b0b0b";
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+            }
+
+            if(state.players.length > 1 || p.dead)
+                label(ctx, p === me ? "you" : p.dead ? `${p.name} (down)` : p.name, x, y + s * 1.4 + 9, {colour: p.dead ? "#fda4af" : colour, size: 10, bold: p === me});
+
+        }
+
+        // what the colours mean
+        const keys = [
+            ["you", "#ffffff", "dot"],
+            ...state.players.length > 1 ? [["friend", "#63d69f", "dot"]] : [],
+            ["chest", "#e5e5e5", "box"],
+            ["way on", "#61a8ff", "ring"],
+            ["way home", "#9ca3af", "ring"],
+            ["enemy in sight", "#ff5c7a", "dot"],
+            ["unexplored edge", "#3a3a48", "edge"]
+        ];
+
+        ctx.font = `11px Arial, Helvetica, sans-serif`;
+
+        const widths = keys.map(([text]) => ctx.measureText(text).width + 26);
+        const total = widths.reduce((a, b) => a + b, 0);
+        let kx = (W - total) / 2;
+        const ky = H - 26;
+
+        keys.forEach(([text, colour, shape], i) => {
+
+            ctx.fillStyle = colour;
+            ctx.strokeStyle = colour;
+            ctx.lineWidth = 2;
+
+            if(shape === "dot"){
+
+                ctx.beginPath();
+                ctx.arc(kx + 6, ky, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+            }
+            else if(shape === "box")
+                ctx.fillRect(kx + 1, ky - 4, 10, 8);
+            else if(shape === "edge"){
+
+                ctx.fillRect(kx + 1, ky - 4, 10, 8);
+                ctx.fillStyle = "rgba(196, 196, 214, 0.75)";
+                ctx.fillRect(kx + 5, ky - 1, 2, 2);
+
+            }
+            else{
+
+                ctx.beginPath();
+                ctx.arc(kx + 6, ky, 4.5, 0, Math.PI * 2);
+                ctx.stroke();
+
+            }
+
+            label(ctx, text, kx + 16, ky, {colour: "#9ca3af", size: 11, align: "left"});
+
+            kx += widths[i];
+
+        });
 
         ctx.restore();
 
@@ -346,6 +616,11 @@ export function createHud(ctx, effects, fog){
     }
 
 
-    return {draw};
+    return {
+        draw,
+        toggleMap: () => mapOpen = !mapOpen,
+        closeMap: () => mapOpen = false,
+        mapOpen: () => mapOpen
+    };
 
 }

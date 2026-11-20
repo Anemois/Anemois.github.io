@@ -1,5 +1,5 @@
 import {TILE} from "./data.js";
-import {FLOOR} from "./map.js";
+import {walkable} from "./map.js";
 
 
 // How enemies find their way through the cave: a "flow field". Every so
@@ -41,7 +41,7 @@ export function updateNav(state){
 
     // enemies need room (wide tiles), but right around a player any floor
     // counts, so hiding in a crack does not make you unfindable
-    const open = (n, d) => wide[n] === 1 || (d <= 3 && tiles[n] === FLOOR);
+    const open = (n, d) => wide[n] === 1 || (d <= 3 && walkable(tiles[n]));
 
     let head = 0;
     let tail = 0;

@@ -1,5 +1,5 @@
 import {TILE} from "./data.js";
-import {solidAt, tileAt, CRATE} from "./map.js";
+import {solidAt, blocksAt, tileAt, CRATE} from "./map.js";
 
 
 export const DEG = Math.PI / 180;
@@ -108,8 +108,8 @@ export function moveBody(map, body, dx, dy){
 
 /* ---------------- Rays ---------------- */
 
-// Walks a ray until it meets a wall. Returns the length and, if it stopped
-// on a crate, that crate's tile.
+// Walks a ray until it meets rock or a crate (it crosses water, chasms and
+// lava). Returns the length and, if it stopped on a crate, that crate's tile.
 export function castRay(map, x, y, angle, maxLength){
 
     const dx = Math.cos(angle);
@@ -120,7 +120,7 @@ export function castRay(map, x, y, angle, maxLength){
         const tx = Math.floor((x + dx * d) / TILE);
         const ty = Math.floor((y + dy * d) / TILE);
 
-        if(solidAt(map, tx, ty))
+        if(blocksAt(map, tx, ty))
             return {length: d, crate: tileAt(map, tx, ty) === CRATE ? {tx, ty} : null};
 
     }

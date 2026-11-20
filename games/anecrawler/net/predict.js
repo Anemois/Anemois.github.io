@@ -3,7 +3,7 @@ import {movePlayer, resetHands} from "../sim/sim.js";
 import {trigger, pelletAngles, SWING_TIME, MUZZLE, HOMING_RANGE} from "../sim/combat.js";
 import {weaponStats} from "../sim/loot.js";
 import {castRay, segmentDistance, angleDiff, clamp, DEG} from "../sim/physics.js";
-import {solidAt} from "../sim/map.js";
+import {blocksAt} from "../sim/map.js";
 import {isActive} from "../sim/world.js";
 import {hashText} from "../sim/rng.js";
 
@@ -24,11 +24,18 @@ import {hashText} from "../sim/rng.js";
 // Their scatter comes from how many shots you have fired, which both
 // machines know, so they fly where the host's do. They stop at walls and
 // at the enemies you can see; hit numbers still come from the host.
+//
+// An enemy you hit on this screen flashes and flinches at once, too. Only
+// the look: how much it lost, and whether it died, wait for the host (it
+// knows about crits, shields and who got there first), so nothing shown
+// here ever has to be taken back.
 
 const FADE = 14;                // a correction of your position fades at this rate (1/s)
 const JUMP = 120;               // a correction bigger than this is a jump: no fading
 const MAX_FLYERS = 300;
 const MAX_PENDING = 600;        // inputs kept for replaying (10 s)
+const FLINCH = 0.12;            // how long a hit enemy flashes here, seconds
+const FLINCH_PUSH = 3.5;        // ...and how far it jerks back
 
 
 export function createPredictor(){
@@ -49,6 +56,7 @@ export function createPredictor(){
     const pending = [];             // {seq, intent} the host has not used yet
     const flyers = [];
     const events = [];              // what our own hands did, for the screen
+    const struck = new Map();       // enemy id -> {t, angle}: hit on this screen just now
 
     let id = null;
     let key = 0;
@@ -136,7 +144,7 @@ export function createPredictor(){
         me.weapons = mine.weapons;
         me.aim = Math.atan2(intent.aimY - me.y, intent.aimX - me.x);
 
-        if(movePlayer(world.map, me, intent, STEP, intent.dash && !me.held.dash) && live)
+        if(movePlayer(world.map, me, intent, STEP, intent.dash && !me.held.dash, world.zones) && live)
             events.push({type: "dash", pid: id, x: me.x, y: me.y});
 
         if(intent.swap && !me.held.swap && mine.weapons.length > 1){
@@ -309,6 +317,14 @@ export function createPredictor(){
 
         swing = {t: SWING_TIME, dur: SWING_TIME, angle: me.aim, arc: s.arc * DEG, range, weapon: s.id};
 
+        // whatever it sweeps through flinches now
+        for(const e of world.enemies){
+
+            if(isActive(e) && Math.hypot(e.x - me.x, e.y - me.y) < range + e.r && Math.abs(angleDiff(me.aim, Math.atan2(e.y - me.y, e.x - me.x))) < s.arc * DEG / 2 + 0.2)
+                strike(e, Math.atan2(e.y - me.y, e.x - me.x));
+
+        }
+
         if(s.shock){
 
             events.push({
@@ -335,6 +351,10 @@ export function createPredictor(){
         if(s.rail){
 
             const ray = castRay(world.map, me.x, me.y, me.aim, s.rail);
+
+            for(const e of world.enemies)
+                if(isActive(e) && segmentDistance(me.x, me.y, me.aim, ray.length, e).distance < e.r + 6)
+                    strike(e, me.aim);
 
             events.push({
                 type: "rail",
@@ -447,14 +467,14 @@ export function createPredictor(){
             const tx = Math.floor(f.x / TILE);
             const ty = Math.floor(f.y / TILE);
 
-            if(solidAt(map, tx, ty)){
+            if(blocksAt(map, tx, ty)){
 
                 const angle = Math.atan2(f.vy, f.vx);
 
                 if(f.bounce > 0){
 
-                    const flipX = solidAt(map, tx, Math.floor(oy / TILE));
-                    const flipY = solidAt(map, Math.floor(ox / TILE), ty);
+                    const flipX = blocksAt(map, tx, Math.floor(oy / TILE));
+                    const flipY = blocksAt(map, Math.floor(ox / TILE), ty);
 
                     if(flipX || !flipY)
                         f.vx = -f.vx;
@@ -523,6 +543,8 @@ export function createPredictor(){
             if(f.kind !== "slash")
                 events.push({type: "spark", x: f.x, y: f.y, angle: Math.atan2(f.vy, f.vx), weapon: f.weapon});
 
+            strike(e, Math.atan2(f.vy, f.vx));
+
             if(f.pierce > 0){
 
                 f.pierce--;
@@ -589,6 +611,10 @@ export function createPredictor(){
         fadeX *= fade;
         fadeY *= fade;
 
+        for(const [id, hit] of struck)
+            if((hit.t -= seconds) <= 0)
+                struck.delete(id);
+
         if(swing && (swing.t -= seconds) <= 0)
             swing = null;
 
@@ -617,6 +643,26 @@ export function createPredictor(){
     // Dresses our player record (from the latest snapshot) with the guess:
     // where we stand, the hands, the tank.
     function show(mine, intent, map, enemies){
+
+        // enemies we just hit: a flash and a little jerk back
+        if(struck.size){
+
+            for(const e of enemies){
+
+                const hit = struck.get(e.id);
+
+                if(!hit)
+                    continue;
+
+                const k = hit.t / FLINCH;
+
+                e.flash = 1;
+                e.x += Math.cos(hit.angle) * FLINCH_PUSH * k;
+                e.y += Math.sin(hit.angle) * FLINCH_PUSH * k;
+
+            }
+
+        }
 
         if(!placed)
             return;
@@ -672,6 +718,14 @@ export function createPredictor(){
 
         along.sort((a, b) => a - b);
 
+        // what the beam burns flickers
+        const reach = along.length > pierce ? along[pierce] : ray.length;
+
+        if(Math.random() < 0.5)
+            for(const e of enemies)
+                if(isActive(e) && segmentDistance(mine.x, mine.y, mine.aim, reach, e).distance < e.r + 5)
+                    strike(e, mine.aim, 0.05);
+
         // the host's chain of jumps (Prism), as it last saw it
         const chain = mine.hostBeam?.chain ?? [];
 
@@ -680,6 +734,14 @@ export function createPredictor(){
             chain,
             weapon: s.id
         };
+
+    }
+
+
+    // an enemy on this screen took a hit from us
+    function strike(e, angle, time = FLINCH){
+
+        struck.set(e.id, {t: time, angle});
 
     }
 
@@ -704,6 +766,7 @@ export function createPredictor(){
         pending.length = 0;
         flyers.length = 0;
         events.length = 0;
+        struck.clear();
         swing = null;
         placed = false;
         fadeX = fadeY = 0;

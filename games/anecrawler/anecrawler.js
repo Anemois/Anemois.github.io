@@ -538,6 +538,23 @@ export function init(container){
         if(voteBar.key(event))
             return true;
 
+        // the full map: open over the game, which carries on underneath
+        if(event.code === "KeyM" && !event.repeat && !paused && !inLobby()){
+
+            renderer.toggleMap();
+
+            return true;
+
+        }
+
+        if(event.code === "Escape" && renderer.mapOpen()){
+
+            renderer.closeMap();
+
+            return true;
+
+        }
+
         if(event.code === "Escape"){
 
             setPaused(!paused);

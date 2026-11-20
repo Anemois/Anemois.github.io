@@ -1,11 +1,13 @@
-import {TILE, WORLDS, FLOORS_PER_WORLD} from "../sim/data.js";
-import {VOID, FLOOR, WALL, CRATE} from "../sim/map.js";
+import {TILE, TINTS, PLAYER, worldOf} from "../sim/data.js";
+import {VOID, FLOOR, WALL, CRATE, WATER, CHASM, LAVA} from "../sim/map.js";
 import {floorName} from "../sim/loot.js";
-import {alpha, mix, createLightLayer} from "../../../lib/fx.js";
+import {alpha, mix} from "../../../lib/fx.js";
 import {createEffects} from "./effects.js";
 import {createFog} from "./fog.js";
 import {createActors} from "./actors.js";
 import {createHud} from "./hud.js";
+import {createTerrain} from "./terrain.js";
+import {createLighting, sight} from "./lighting.js";
 import {weaponLook} from "./sprites.js";
 import {circle, shadow, roundRect, diamond, label, FONT} from "./draw.js";
 
@@ -13,7 +15,8 @@ import {circle, shadow, roundRect, diamond, label, FONT} from "./draw.js";
 const VIEW_W = 528;                 // world units across the screen
 const SIGHT_LIGHT = 230;            // how far a player's own light reaches
 const DARKNESS = 0.62;              // how dark the unlit cave is (0..1)
-const MAX_BULLET_LIGHTS = 40;
+const MAX_BULLET_LIGHTS = 50;
+const LOW_HP = 2;                   // at this much health your light beats with your heart
 
 const LOBBY = {name: "Lobby", floor: "#111111", line: "#151515", wall: "#1c1c1c", top: "#262626"};
 
@@ -26,8 +29,20 @@ const PORTALS = {
 const TAU = Math.PI * 2;
 
 
-export const worldOf = floor =>
-    WORLDS[(Math.ceil(floor / FLOORS_PER_WORLD) - 1) % WORLDS.length];
+// is this world point open ground (not rock)?
+function openAt(map, x, y){
+
+    const tx = Math.floor(x / TILE);
+    const ty = Math.floor(y / TILE);
+
+    if(tx < 0 || ty < 0 || tx >= map.w || ty >= map.h)
+        return false;
+
+    const t = map.tiles[ty * map.w + tx];
+
+    return t !== WALL && t !== VOID;
+
+}
 
 
 // the colours a floor is drawn with, worked out once per palette
@@ -64,9 +79,12 @@ export function createRenderer(canvas){
     const effects = createEffects();
     const fx = effects.fx;
     const fog = createFog();
-    const dark = createLightLayer({scale: 0.25});
+    const light = createLighting({scale: 0.25});
+    const shapes = [[], [], [], []];    // what each player's light reaches (sight())
+    const drawn = [];                   // the enemies drawn this frame
     const actors = createActors(ctx, effects);
     const hud = createHud(ctx, effects, fog);
+    const terrain = createTerrain(ctx, fx);
 
     const camera = {x: 0, y: 0, snap: true};
 
@@ -132,6 +150,16 @@ export function createRenderer(canvas){
             if(event.type === "floor")
                 effects.banner(floorName(event.floor), worldOf(event.floor).name + (event.boss ? " · something big sleeps here" : ""), {life: 2.4});
 
+            // the way on opened somewhere off screen: say so
+            if(event.type === "unsealed" && event.target === "next"){
+
+                const mine = state.players.find(p => p.id === me);
+
+                if(mine && Math.hypot(mine.x - event.x, mine.y - event.y) > 320)
+                    effects.banner("", "the way onward is open", {life: 2, colour: "#93c5fd"});
+
+            }
+
         }
 
     }
@@ -151,11 +179,13 @@ export function createRenderer(canvas){
 
         const me = state.players.find(p => p.id === view.me);
         const lobby = state.mode === "lobby";
-        const palette = lobby ? LOBBY : worldOf(state.floor);
+        const world = lobby ? null : worldOf(state.floor);
+        const palette = world ?? LOBBY;
 
         if(fog.map !== state.map){
 
             fog.reset(state.map);
+            terrain.reset(state.map, world);
 
             camera.snap = true;
 
@@ -182,7 +212,20 @@ export function createRenderer(canvas){
         const onScreen = (x, y, pad = 40) =>
             x > left - pad && x < right + pad && y > top - pad && y < bottom + pad;
 
-        drawMap(state.map, shadesOf(palette), left, top, right, bottom);
+        // on screen and found already
+        const visible = (x, y, pad = 40) =>
+            onScreen(x, y, pad) && fog.knows(x, y);
+
+        drawMap(state.map, shadesOf(palette), left, top, right, bottom, state.time);
+
+        actors.setLights(state.players, SIGHT_LIGHT, view.me);
+
+        if(!lobby){
+
+            terrain.zones(state.zones ?? [], time, dt, visible);
+            terrain.air(dt, left, top, right, bottom, (x, y) => fog.knows(x, y) && openAt(state.map, x, y));
+
+        }
 
         fx.drawUnder(ctx);
 
@@ -201,9 +244,19 @@ export function createRenderer(canvas){
                 drawPickup(pk);
 
         // only what you can see right now (a woken boss shows through the dark)
-        for(const e of state.enemies)
-            if(onScreen(e.x, e.y, 80) && (fog.sees(e.x, e.y) || (e.boss && !e.asleep)))
+        drawn.length = 0;
+
+        for(const e of state.enemies){
+
+            if(onScreen(e.x, e.y, 80) && (fog.sees(e.x, e.y) || (e.boss && !e.asleep))){
+
                 actors.enemy(e, state);
+
+                drawn.push(e);
+
+            }
+
+        }
 
         state.players.forEach((p, i) => actors.player(p, i, state));
 
@@ -227,10 +280,27 @@ export function createRenderer(canvas){
 
         }
 
+        // a fallen friend close by: hold E to help them up
+        if(me && !me.dead){
+
+            const friend = state.players.find(p => p !== me && p.dead && Math.hypot(p.x - me.x, p.y - me.y) < PLAYER.reviveRange);
+
+            if(friend)
+                promptAt(me.reviving === friend.id ? `Reviving ${friend.name}…` : `Hold E  Revive ${friend.name}`, friend.x, friend.y + friend.r + 22);
+
+        }
+
         fx.drawText(ctx);
 
-        if(!lobby)
-            drawDarkness(state, onScreen);
+        if(!lobby){
+
+            drawLight(state, onScreen, visible, world);
+
+            actors.eyesInDark(drawn);
+
+            drawEdges(time);
+
+        }
 
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -280,15 +350,50 @@ export function createRenderer(canvas){
 
     // Only explored tiles are drawn; ones out of view right now are dimmed.
     // Rock gets a lighter top and, where it meets floor below, a front face.
-    function drawMap(map, shades, left, top, right, bottom){
+    // Unseen ground right next to ground you have seen: a faint grey haze
+    // over the dark, so you can tell where the cave goes on from where it
+    // ends in rock.
+    const edges = [];
+
+    function drawEdges(time){
+
+        if(!edges.length)
+            return;
+
+        const pulse = 0.85 + Math.sin(time * 1.6) * 0.15;
+
+        ctx.fillStyle = `rgba(150, 150, 168, ${0.11 * pulse})`;
+
+        for(let i = 0; i < edges.length; i += 2)
+            ctx.fillRect(edges[i] * TILE, edges[i + 1] * TILE, TILE, TILE);
+
+        ctx.fillStyle = `rgba(170, 170, 190, ${0.22 * pulse})`;
+
+        for(let i = 0; i < edges.length; i += 2){
+
+            const x = edges[i] * TILE;
+            const y = edges[i + 1] * TILE;
+
+            ctx.fillRect(x + 8, y + 8, 3, 3);
+            ctx.fillRect(x + 21, y + 21, 3, 3);
+
+        }
+
+    }
+
+
+    function drawMap(map, shades, left, top, right, bottom, worldTime){
 
         const {w, h, tiles} = map;
+
+        edges.length = 0;
 
         const tx0 = Math.max(0, Math.floor(left / TILE));
         const ty0 = Math.max(0, Math.floor(top / TILE));
         const tx1 = Math.min(w - 1, Math.floor(right / TILE));
         const ty1 = Math.min(h - 1, Math.floor(bottom / TILE));
 
+        // anything but rock
         const open = (x, y) => {
 
             if(x < 0 || y < 0 || x >= w || y >= h)
@@ -296,9 +401,12 @@ export function createRenderer(canvas){
 
             const t = tiles[y * w + x];
 
-            return t === FLOOR || t === CRATE;
+            return t !== WALL && t !== VOID;
 
         };
+
+        const kindAt = (x, y) =>
+            x < 0 || y < 0 || x >= w || y >= h ? VOID : tiles[y * w + x];
 
         for(let ty = ty0; ty <= ty1; ty++){
 
@@ -306,8 +414,16 @@ export function createRenderer(canvas){
 
                 const i = ty * w + tx;
 
-                if(!fog.seen(i))
+                if(!fog.seen(i)){
+
+                    // the edge of what you have explored (drawn over the
+                    // dark, after the lights)
+                    if(fog.frontier(i))
+                        edges.push(tx, ty);
+
                     continue;
+
+                }
 
                 const tile = tiles[i];
                 const x = tx * TILE;
@@ -323,6 +439,8 @@ export function createRenderer(canvas){
 
                     ctx.fillStyle = shades.top;
                     ctx.fillRect(x, y, TILE, TILE);
+
+                    terrain.rock(x, y, (Math.imul(tx, 73856093) ^ Math.imul(ty, 19349663)) >>> 0, ty, open(tx, ty + 1));
 
                     // a front face where the rock meets the floor below
                     if(open(tx, ty + 1)){
@@ -345,6 +463,18 @@ export function createRenderer(canvas){
 
                     if(open(tx, ty - 1))
                         ctx.fillRect(x, y, TILE, 1);
+
+                }
+                else if(tile === WATER || tile === CHASM || tile === LAVA){
+
+                    terrain.ground(tile, tx, ty, x, y, (Math.imul(tx, 73856093) ^ Math.imul(ty, 19349663)) >>> 0, time, kindAt, shades);
+
+                    if(tile === WATER && !open(tx, ty - 1)){
+
+                        ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
+                        ctx.fillRect(x, y, TILE, 6);
+
+                    }
 
                 }
                 else{
@@ -372,6 +502,8 @@ export function createRenderer(canvas){
 
                     if(tile === CRATE)
                         drawCrate(x, y, map.crates.get(i) ?? 3);
+                    else if(map.decor[i])
+                        terrain.decor(map.decor[i], x, y, noise, time, worldTime, kindAt, tx, ty);
 
                 }
 
@@ -421,18 +553,90 @@ export function createRenderer(canvas){
 
     /* ---------------- Light ---------------- */
 
-    // the cave is dark: players, shots, portals and blasts light it up
-    function drawDarkness(state, onScreen){
+    // The cave is dark. Each player carries a light that rock and crates
+    // throw shadows in; everything else that glows lights it too, in its
+    // own colour: lava, crystals, candles, shots, blasts, burning ground,
+    // and the creatures that glow (embers, shades, a necromancer's staff).
+    function drawLight(state, onScreen, visible, world){
 
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        const mood = terrain.mood(time);
 
-        dark.begin(canvas.width, canvas.height, DARKNESS);
+        light.begin(canvas.width, canvas.height, Math.max(0, Math.min(0.95, (world?.dark ?? DARKNESS) + mood.dark)), terrain.shade());
 
-        const lamp = (x, y, r, strength) => dark.light(screenX(x), screenY(y), r * scale, strength);
+        // world point -> a light there (and its colour)
+        const lamp = (x, y, r, strength, hue, glow = 0.4) => {
 
-        for(const p of state.players)
-            lamp(p.x, p.y, p.dead ? SIGHT_LIGHT * 0.5 : SIGHT_LIGHT, 1);
+            const sx = screenX(x);
+            const sy = screenY(y);
 
+            light.lamp(sx, sy, r * scale, strength);
+
+            if(hue)
+                light.colour(sx, sy, r * scale * 0.85, hue, strength * glow);
+
+        };
+
+        const streak = (x1, y1, x2, y2, r, hue, strength) =>
+            light.streak(screenX(x1), screenY(y1), screenX(x2), screenY(y2), r * scale, hue, strength);
+
+        // the players' own lights, cut by the rock around them
+        state.players.forEach((p, i) => {
+
+            if(!onScreen(p.x, p.y, SIGHT_LIGHT + 80))
+                return;
+
+            const sway = 1 + 0.025 * Math.sin(time * 7.3 + i) * Math.sin(time * 3.1 + i * 2);
+
+            let r = (p.dead ? SIGHT_LIGHT * 0.5 : SIGHT_LIGHT) * sway;
+
+            // badly hurt: the light dims and reddens with each heartbeat
+            if(!p.dead && p.hp <= LOW_HP){
+
+                const beat = heartbeat(time);
+
+                r *= 1 - 0.1 * beat;
+
+                light.colour(screenX(p.x), screenY(p.y), 140 * scale, "#ff3b5c", 0.28 * beat);
+
+            }
+
+            const shape = sight(state.map, p.x, p.y, r, shapes[i % 4]);
+
+            for(let k = 0; k < shape.length; k += 2){
+
+                shape[k] = screenX(shape[k]);
+                shape[k + 1] = screenY(shape[k + 1]);
+
+            }
+
+            light.shadowed(screenX(p.x), screenY(p.y), r * scale, 1, shape);
+
+            // you can always see yourself and what is right beside you
+            light.lamp(screenX(p.x), screenY(p.y), 38 * scale, 0.85);
+
+            if(world)
+                light.colour(screenX(p.x), screenY(p.y), r * scale * 0.45, world.light, 0.09);
+
+        });
+
+        // candles, glowing mushrooms, crystals, lava, vents, light shafts
+        terrain.lights(lamp, streak, visible, time, state.time);
+
+        for(const z of state.zones ?? []){
+
+            if(!visible(z.x, z.y, z.r))
+                continue;
+
+            const fade = Math.min(1, (z.life / z.max) * 4);
+
+            if(z.kind === "fire")
+                lamp(z.x, z.y, z.r * 1.9, 0.55 * fade * (0.85 + 0.15 * Math.sin(time * 13 + z.x)), "#ff6a1a", 0.3);
+            else
+                lamp(z.x, z.y, z.r * 1.2, 0.2 * fade, "#e879f9", 0.6);
+
+        }
+
+        // shots light the walls they fly past, in their own colour
         let count = 0;
 
         for(const b of state.bullets){
@@ -442,7 +646,7 @@ export function createRenderer(canvas){
 
             if(onScreen(b.x, b.y)){
 
-                lamp(b.x, b.y, b.r * 5 + 22, 0.55);
+                lamp(b.x, b.y, b.r * 5 + 22, 0.55, b.team === "p" ? weaponLook(b.weapon).colour : TINTS[b.tint ?? 0], 0.3);
 
                 count++;
 
@@ -450,17 +654,40 @@ export function createRenderer(canvas){
 
         }
 
-        for(const prop of state.props)
-            if(onScreen(prop.x, prop.y, 120) && fog.knows(prop.x, prop.y))
-                lamp(prop.x, prop.y, prop.kind === "portal" ? 110 : 70, 0.7);
+        for(const prop of state.props){
+
+            if(!onScreen(prop.x, prop.y, 120) || !fog.knows(prop.x, prop.y))
+                continue;
+
+            if(prop.kind === "portal")
+                lamp(prop.x, prop.y, 115, 0.75 + 0.1 * Math.sin(time * 3), PORTALS[prop.target]?.colour, 0.5);
+            else
+                lamp(prop.x, prop.y, 70, 0.7, prop.source === "boss" ? "#facc15" : "#e5e5e5", 0.3);
+
+        }
+
+        for(const pk of state.pickups)
+            if(pk.kind !== "energy" && onScreen(pk.x, pk.y) && fog.sees(pk.x, pk.y))
+                lamp(pk.x, pk.y, 26, 0.35, pk.kind === "shard" ? "#c4b5fd" : "#ff5c7a", 0.6);
 
         for(const l of state.lasers){
 
-            if(l.warn > 0)
+            const colour = TINTS[l.tint ?? 2];
+            const x2 = l.x + Math.cos(l.angle) * l.length;
+            const y2 = l.y + Math.sin(l.angle) * l.length;
+
+            if(l.warn > 0){
+
+                streak(l.x, l.y, x2, y2, 14, colour, 0.06);
+
                 continue;
+
+            }
 
             for(let d = 0; d < l.length; d += 60)
                 lamp(l.x + Math.cos(l.angle) * d, l.y + Math.sin(l.angle) * d, 70, 0.6);
+
+            streak(l.x, l.y, x2, y2, 30, colour, 0.35);
 
         }
 
@@ -469,18 +696,43 @@ export function createRenderer(canvas){
             if(!p.beam)
                 continue;
 
+            const colour = weaponLook(p.beam.weapon).colour;
+
             for(let d = 40; d < p.beam.length; d += 60)
                 lamp(p.x + Math.cos(p.aim) * d, p.y + Math.sin(p.aim) * d, 60, 0.6);
 
+            streak(p.x, p.y, p.x + Math.cos(p.aim) * p.beam.length, p.y + Math.sin(p.aim) * p.beam.length, 26, colour, 0.3);
+
         }
 
-        for(const e of state.enemies)
-            if(e.boss && !e.asleep)
-                lamp(e.x, e.y, e.r * 4, 0.7);
+        // the creatures that glow (and every boss)
+        for(const e of drawn){
 
-        fx.lights(lamp);
+            const glow = actors.glowOf(e);
 
-        dark.end(ctx);
+            if(glow)
+                lamp(e.x, e.y, glow[0], glow[2], glow[1], 0.35);
+
+        }
+
+        // muzzle flashes, blasts, sparks: each in its colour
+        fx.lights((x, y, r, strength, hue) => lamp(x, y, r, strength, hue, 0.35));
+
+        // a world's own mood: the Furnace's heat, the Abyss surging
+        if(mood.wash)
+            light.colour(canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height) * 0.8, mood.wash[0], mood.wash[1]);
+
+        light.end(ctx, 0.8);
+
+    }
+
+
+    // 0..1, twice a beat, like a heart
+    function heartbeat(t){
+
+        const phase = (t * 1.25) % 1;
+
+        return Math.max(Math.exp(-((phase - 0.08) ** 2) / 0.003), 0.7 * Math.exp(-((phase - 0.3) ** 2) / 0.003));
 
     }
 
@@ -526,6 +778,10 @@ export function createRenderer(canvas){
 
             const look = PORTALS[prop.target];
 
+            // sealed while enemies are close: grey, slow, bound by red chains
+            if(prop.locked > 0)
+                return drawSealed(prop, look);
+
             ctx.fillStyle = alpha(look.colour, 0.12 + 0.06 * Math.sin(time * 3));
             ctx.beginPath();
             ctx.ellipse(prop.x, prop.y, 20, 13, 0, 0, TAU);
@@ -554,11 +810,67 @@ export function createRenderer(canvas){
     }
 
 
+    function drawSealed(prop, look){
+
+        const pulse = 0.5 + 0.5 * Math.sin(time * 4);
+
+        ctx.fillStyle = "rgba(107, 114, 128, 0.12)";
+        ctx.beginPath();
+        ctx.ellipse(prop.x, prop.y, 20, 13, 0, 0, TAU);
+        ctx.fill();
+
+        for(let i = 0; i < 3; i++){
+
+            const r = 18 - i * 5;
+            const a = time * (0.4 + i * 0.2) + i;
+
+            ctx.strokeStyle = alpha(mix(look.colour, "#6b7280", 0.7), 0.6 - i * 0.15);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(prop.x, prop.y, r, r * 0.62, 0, a, a + Math.PI * 1.4);
+            ctx.stroke();
+
+        }
+
+        // the seal: crossed chains and a ring of runes
+        ctx.strokeStyle = alpha("#ff5c7a", 0.55 + 0.3 * pulse);
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(prop.x - 22, prop.y - 14);
+        ctx.lineTo(prop.x + 22, prop.y + 14);
+        ctx.moveTo(prop.x + 22, prop.y - 14);
+        ctx.lineTo(prop.x - 22, prop.y + 14);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        for(let i = 0; i < 6; i++){
+
+            const a = -time * 0.8 + i * TAU / 6;
+
+            circle(ctx, prop.x + Math.cos(a) * 27, prop.y + Math.sin(a) * 17, 1.8, alpha("#ff5c7a", 0.5 + 0.4 * pulse));
+
+        }
+
+        label(ctx, `Sealed · ${prop.locked} ${prop.locked === 1 ? "enemy" : "enemies"} near`, prop.x, prop.y + 26, {colour: "#ff8fa3", size: 8});
+
+    }
+
+
     function drawPrompt(prop){
 
+        const sealed = prop.kind === "portal" && prop.locked > 0;
         const verb = prop.kind === "portal" ? PORTALS[prop.target].label : "Open";
         const y = prop.y - (prop.kind === "portal" ? 30 : 26);
-        const text = `E  ${verb}`;
+        const text = sealed ? `Kill the ${prop.locked} ${prop.locked === 1 ? "enemy" : "enemies"} nearby first` : `E  ${verb}`;
+
+        promptAt(text, prop.x, y);
+
+    }
+
+
+    // a little dark tag with a key hint, centred over a point
+    function promptAt(text, x, y){
 
         ctx.font = `bold 8px ${FONT}`;
 
@@ -568,12 +880,12 @@ export function createRenderer(canvas){
         ctx.strokeStyle = "#555";
         ctx.lineWidth = 1;
 
-        roundRect(ctx, prop.x - w / 2, y - 7, w, 14, 4);
+        roundRect(ctx, x - w / 2, y - 7, w, 14, 4);
 
         ctx.fill();
         ctx.stroke();
 
-        label(ctx, text, prop.x, y, {size: 8, bold: true});
+        label(ctx, text, x, y, {size: 8, bold: true});
 
     }
 
@@ -617,19 +929,79 @@ export function createRenderer(canvas){
     }
 
 
+    // what each kind of enemy strike looks like while it is coming
+    const STRIKE_COLOURS = {fire: "#ff8a3d", meteor: "#ff6a1a", bone: "#e7e5e4", slam: "#ff5c7a"};
+
     function drawStrike(s){
 
-        const k = 1 - Math.max(0, s.delay) / s.total;
+        // (on a guest's screen a strike can be newer than the moment shown)
+        const k = Math.min(1, Math.max(0, 1 - s.delay / s.total));
 
         if(s.team === "e"){
 
-            circle(ctx, s.x, s.y, s.r * k, alpha("#ff5c7a", 0.08 + 0.15 * k));
+            const colour = STRIKE_COLOURS[s.look] ?? "#ff5c7a";
 
-            ctx.strokeStyle = "rgba(255, 92, 122, 0.6)";
-            ctx.lineWidth = 1.5;
+            circle(ctx, s.x, s.y, s.r * k, alpha(colour, 0.08 + 0.15 * k));
+
+            ctx.strokeStyle = alpha(colour, 0.6);
+            ctx.lineWidth = s.look === "slam" ? 3 : 1.5;
             ctx.beginPath();
             ctx.arc(s.x, s.y, s.r, 0, TAU);
             ctx.stroke();
+
+            // a fireball arcing over from whoever threw it
+            if(s.look === "fire" && s.from){
+
+                const fx0 = s.from.x + (s.x - s.from.x) * k;
+                const fy0 = s.from.y + (s.y - s.from.y) * k - Math.sin(k * Math.PI) * 70;
+
+                circle(ctx, fx0, fy0 + Math.sin(k * Math.PI) * 70 * 0.4, 5, "rgba(0, 0, 0, 0.25)");
+                circle(ctx, fx0, fy0, 6, "#ff8a3d");
+                circle(ctx, fx0, fy0, 3, "#fde68a");
+
+                if(Math.random() < 0.5)
+                    fx.burst(fx0, fy0, {count: 1, colour: "#ff9a5a", speed: 12, life: 0.35, size: 2.5, glow: true, shape: "dot"});
+
+            }
+
+            // a rock falling out of the dark
+            if(s.look === "meteor"){
+
+                const height = (1 - k) * 260;
+
+                ctx.strokeStyle = "rgba(255, 138, 61, 0.45)";
+                ctx.lineWidth = 5;
+                ctx.lineCap = "round";
+                ctx.beginPath();
+                ctx.moveTo(s.x + height * 0.35 + 18, s.y - height - 36);
+                ctx.lineTo(s.x + height * 0.35, s.y - height);
+                ctx.stroke();
+
+                circle(ctx, s.x + height * 0.35, s.y - height, 6, "#3b1d0e");
+                circle(ctx, s.x + height * 0.35, s.y - height, 3.5, "#ffb347");
+
+            }
+
+            // bone spikes about to break the surface
+            if(s.look === "bone" && k > 0.6){
+
+                ctx.fillStyle = alpha("#e7e5e4", (k - 0.6) * 1.5);
+
+                for(let i = 0; i < 3; i++){
+
+                    const a = i * 2.1 + s.x;
+                    const bx = s.x + Math.cos(a) * 6;
+                    const by = s.y + Math.sin(a) * 4;
+
+                    ctx.beginPath();
+                    ctx.moveTo(bx - 2.5, by + 2);
+                    ctx.lineTo(bx, by - 6 * (k - 0.5));
+                    ctx.lineTo(bx + 2.5, by + 2);
+                    ctx.fill();
+
+                }
+
+            }
 
             return;
 
@@ -665,9 +1037,12 @@ export function createRenderer(canvas){
 
         ctx.lineCap = "round";
 
+        const colour = TINTS[l.tint ?? 2];
+        const width = l.width ?? 7;
+
         if(l.warn > 0){
 
-            ctx.strokeStyle = alpha("#facc15", 0.18 + 0.12 * Math.sin(time * 20));
+            ctx.strokeStyle = alpha(colour, 0.18 + 0.12 * Math.sin(time * 20));
             ctx.lineWidth = 2;
             ctx.setLineDash([6, 6]);
             ctx.beginPath();
@@ -680,15 +1055,15 @@ export function createRenderer(canvas){
 
         }
 
-        ctx.strokeStyle = "rgba(250, 204, 21, 0.25)";
-        ctx.lineWidth = 16;
+        ctx.strokeStyle = alpha(colour, 0.25);
+        ctx.lineWidth = width * 2.3;
         ctx.beginPath();
         ctx.moveTo(l.x, l.y);
         ctx.lineTo(x2, y2);
         ctx.stroke();
 
-        ctx.strokeStyle = "#fff7cc";
-        ctx.lineWidth = 4;
+        ctx.strokeStyle = mix(colour, "#ffffff", 0.75);
+        ctx.lineWidth = width * 0.6;
         ctx.stroke();
 
     }
@@ -697,7 +1072,10 @@ export function createRenderer(canvas){
     return {
         resize, toWorld, handle, draw,
         banner: effects.banner,
-        speed: () => fx.speed()
+        speed: () => fx.speed(),
+        toggleMap: hud.toggleMap,
+        closeMap: hud.closeMap,
+        mapOpen: hud.mapOpen
     };
 
 }

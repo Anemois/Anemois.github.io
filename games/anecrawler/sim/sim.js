@@ -1,13 +1,14 @@
-import {STEP, TILE, PLAYER} from "./data.js";
+import {STEP, TILE, PLAYER, WORLDS, worldIndex} from "./data.js";
 import {createRng, randomSeed, hashText} from "./rng.js";
 import {generateFloor, generateLobby} from "./mapgen.js";
 import {createGrid} from "./grid.js";
 import {createNav, updateNav} from "./nav.js";
-import {moveBody} from "./physics.js";
+import {moveBody, lineOfSight} from "./physics.js";
 import {rollWeapon, isBossFloor} from "./loot.js";
 import {emit, newId, addProp} from "./world.js";
 import {updateWeapon, updateBullets, updateStrikes, updateLasers} from "./combat.js";
 import {populate, refreshLive, updateEnemies, makeDummy} from "./enemies.js";
+import {groundSpeed, updateZones, updateVents} from "./ground.js";
 
 
 // The whole game world as plain data, stepped at a fixed rate. Nothing in
@@ -26,6 +27,7 @@ import {populate, refreshLive, updateEnemies, makeDummy} from "./enemies.js";
 
 const INTERACT_RANGE = 46;
 const PORTAL_RANGE = 30;
+const PORTAL_GUARD = 300;       // enemies this close to a portal keep it sealed
 const RUN_OVER_DELAY = 1.6;
 const VOTE_TIME = 10;           // seconds to say "not yet" before the group goes anyway
 
@@ -53,6 +55,7 @@ export function createSim({seed = randomSeed()} = {}){
         bullets: [],
         strikes: [],
         lasers: [],
+        zones: [],
         pickups: [],
         props: [],
         events: [],
@@ -77,8 +80,11 @@ export function buildMap({seed, runs, floor, mode}){
         return generateLobby();
 
     const mapSeed = (seed ^ Math.imul(runs * 7919 + floor, 0x9e3779b1)) >>> 0;
+    const map = generateFloor(createRng(mapSeed), {floor, boss: isBossFloor(floor), world: worldIndex(floor)});
 
-    return generateFloor(createRng(mapSeed), {floor, boss: isBossFloor(floor)});
+    map.world = worldIndex(floor) % WORLDS.length;
+
+    return map;
 
 }
 
@@ -98,6 +104,7 @@ function setMap(state){
     state.alarms = [];
     state.bullets = [];
     state.strikes = [];
+    state.zones = [];
     state.lasers = [];
     state.pickups = [];
     state.props = [];
@@ -150,6 +157,7 @@ export function addPlayer(state, {id, name = "Player", loadout = []}){
         held: {...IDLE},
         dead: false,
         revive: 0,
+        reviving: null,             // the fallen friend this player is helping up
         loot: null,
         near: null,
         kills: 0,
@@ -290,7 +298,7 @@ function updatePlayer(state, p, intent, dt, moves = [intent]){
 
         p.aim = Math.atan2(m.aimY - p.y, m.aimX - p.x);
 
-        if(movePlayer(state.map, p, m, dt, m.dash && !p.held.dash))
+        if(movePlayer(state.map, p, m, dt, m.dash && !p.held.dash, state.zones))
             emit(state, "dash", {pid: p.id, x: p.x, y: p.y});
 
         if(m.swap && !p.held.swap && p.weapons.length > 1){
@@ -314,7 +322,13 @@ function updatePlayer(state, p, intent, dt, moves = [intent]){
     if(!moves.length)
         p.moving = false;
 
-    const prop = nearestProp(state, p);
+    // E by a fallen friend helps them up (hold it); otherwise E uses
+    // whatever is closest: a chest, a portal
+    const fallen = nearestFallen(state, p);
+
+    p.reviving = fallen && intent.interact ? fallen.id : null;
+
+    const prop = fallen ? null : nearestProp(state, p);
 
     p.near = prop ? prop.id : null;
 
@@ -349,7 +363,8 @@ function waiting(p){
 // One input's worth of walking (and dashing) for a player: the same code
 // runs on a guest's machine to predict their own movement, so it must only
 // depend on the map, the body and the input. Returns true if a dash began.
-export function movePlayer(map, p, intent, dt, dash){
+// `zones`: the spore clouds about (they slow you, like water); optional
+export function movePlayer(map, p, intent, dt, dash, zones = null){
 
     let mx = intent.moveX;
     let my = intent.moveY;
@@ -391,19 +406,24 @@ export function movePlayer(map, p, intent, dt, dash){
 
     }
 
-    if(p.moving)
-        moveBody(map, p, mx * PLAYER.speed * dt, my * PLAYER.speed * dt);
+    if(p.moving){
+
+        const speed = PLAYER.speed * groundSpeed(map, zones, p.x, p.y);
+
+        moveBody(map, p, mx * speed * dt, my * speed * dt);
+
+    }
 
     return dashed;
 
 }
 
 
-// a fallen player gets up when a friend stands by them long enough
+// a fallen player gets up when a friend holds E by them long enough
 function beRevived(state, p, dt){
 
     const helped = state.players.some(other =>
-        !other.dead && Math.hypot(other.x - p.x, other.y - p.y) < PLAYER.reviveRange);
+        !other.dead && other.reviving === p.id && Math.hypot(other.x - p.x, other.y - p.y) < PLAYER.reviveRange + 8);
 
     p.revive = helped ? p.revive + dt : Math.max(0, p.revive - dt * 0.5);
 
@@ -420,8 +440,64 @@ function beRevived(state, p, dt){
 }
 
 
+// How many enemies stand by each portal (alive, asleep or lying in
+// pieces); while any do, it will not open. Says so when one comes free.
+function guardPortals(state){
+
+    for(const prop of state.props){
+
+        if(prop.kind !== "portal")
+            continue;
+
+        let count = 0;
+
+        // (only ones the portal can "see": an enemy in the next room
+        // through the rock does not count, so a stray one stuck somewhere
+        // can never seal the way out for good)
+        for(const e of state.enemies)
+            if(!e.dead && !e.dummy && (e.x - prop.x) ** 2 + (e.y - prop.y) ** 2 < PORTAL_GUARD * PORTAL_GUARD && lineOfSight(state.map, prop, e))
+                count++;
+
+        if(prop.locked > 0 && count === 0)
+            emit(state, "unsealed", {x: prop.x, y: prop.y, target: prop.target});
+
+        prop.locked = count;
+
+    }
+
+}
+
+
+// the nearest fallen friend close enough to help up
+export function nearestFallen(state, p){
+
+    let best = null;
+    let bestD = PLAYER.reviveRange;
+
+    for(const other of state.players){
+
+        if(other === p || !other.dead)
+            continue;
+
+        const d = Math.hypot(other.x - p.x, other.y - p.y);
+
+        if(d < bestD){
+
+            best = other;
+            bestD = d;
+
+        }
+
+    }
+
+    return best;
+
+}
+
+
 /* ---------------- Props ---------------- */
-// chests (each player opens a chest once, for their own roll) and portals
+// chests (each player opens a chest once, for their own roll) and portals.
+// A portal with enemies close by is sealed until they are dead.
 
 function canUse(prop, p){
 
@@ -477,8 +553,19 @@ function interact(state, p, prop){
 
     }
 
-    if(prop.kind === "portal")
+    if(prop.kind === "portal"){
+
+        if(prop.locked > 0){
+
+            emit(state, "sealed", {pid: p.id, x: prop.x, y: prop.y, count: prop.locked});
+
+            return;
+
+        }
+
         travel(state, p, {to: prop.target, floor: prop.floor ?? 1});
+
+    }
 
 }
 
@@ -777,6 +864,7 @@ function loadFloor(state, floor){
         addProp(state, "portal", map.exit.x, map.exit.y, {target: "next"});
 
     populate(state);
+    guardPortals(state);
 
     for(const p of state.players){
 
@@ -837,6 +925,7 @@ function afterBoss(state){
 
     state.bullets.length = kept;
     state.strikes = state.strikes.filter(s => s.team === "p");
+    state.zones = [];
     state.lasers = [];
 
     addProp(state, "chest", arena.x, arena.y, {source: "boss", opened: []});
@@ -974,6 +1063,11 @@ export function step(state, inputs = {}, moves = {}){
     updateBullets(state, dt);
     updateStrikes(state, dt);
     updateLasers(state, dt);
+    updateZones(state, dt);
+    updateVents(state, dt);
+
+    if(state.tick % 10 === 0)
+        guardPortals(state);
     updatePickups(state, dt);
 
     if(state.bossDown)

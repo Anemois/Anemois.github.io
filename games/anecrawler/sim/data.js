@@ -30,13 +30,65 @@ export const LEVEL_DAMAGE = 1.12;       // weapon damage per level
 export const CRIT_MULTIPLIER = 2;
 export const SHARD_DROP = 0.25;         // chance an enemy drops a shard
 
-// world colours: floor tint and wall tint, cycling after the last one
+// The worlds, in order (they cycle after the last one). Each has its own
+// ground, monsters and boss, not just its own colours:
+//   floor, line, wall, top     tile colours
+//   dark, light                how dark its caves are, and the colour of its lamps
+//   terrain                    how its caves are carved (mapgen.js):
+//     halls      square-ish rooms with straight walls (else round caves)
+//     sway       how much tunnels wander
+//     rough      how ragged the rock edges are
+//     pillars    rock pillars per room
+//     ground     its special ground: water, chasm or lava
+//     vents      fire vents in the floor that erupt now and then
+//     decor      {kind: share of floor tiles}
+//   ambience   the particles in its air (render.js)
+//   enemies    {type: how common}; see ENEMIES for when each first appears
+//   bosses     who may wait on its third floor (one is picked per run)
 export const WORLDS = [
-    {name: "Crypt",   floor: "#101010", line: "#171717", wall: "#1f1f1f", top: "#2b2b2b"},
-    {name: "Grove",   floor: "#0d120e", line: "#142017", wall: "#1a241c", top: "#25352a"},
-    {name: "Abyss",   floor: "#0f0d14", line: "#1a1622", wall: "#211c2b", top: "#2f2840"},
-    {name: "Furnace", floor: "#140f0c", line: "#21170f", wall: "#2a1d14", top: "#3b291c"}
+    {id: "crypt", name: "Crypt",
+     floor: "#101010", line: "#171717", wall: "#1f1f1f", top: "#2b2b2b",
+     dark: 0.66, light: "#ffcf87",
+     terrain: {halls: true, sway: 0.25, rough: 0.03, pillars: 3, ground: null,
+               decor: {bones: 0.035, candle: 0.012, crack: 0.05, tomb: 0.01, cobweb: 0.25}},
+     ambience: "dust",
+     enemies: {skeleton: 3, bat: 2, archer: 2, shade: 1.4, necro: 1},
+     bosses: ["warden", "lich"]},
+
+    {id: "grove", name: "Grove",
+     floor: "#0d120e", line: "#142017", wall: "#1a241c", top: "#25352a",
+     dark: 0.6, light: "#c8f7a8",
+     terrain: {halls: false, sway: 1.25, rough: 0.16, pillars: 0, ground: "water",
+               decor: {grass: 0.2, flower: 0.03, mushroom: 0.012, root: 0.22}},
+     ambience: "fireflies",
+     enemies: {slime: 2.6, wasp: 2, wolf: 2, sporecap: 1.4, boomshroom: 1.3, beetle: 1},
+     bosses: ["queen"]},
+
+    {id: "abyss", name: "Abyss",
+     floor: "#0f0d14", line: "#1a1622", wall: "#211c2b", top: "#2f2840",
+     dark: 0.74, light: "#b9a2ff",
+     terrain: {halls: false, sway: 0.8, rough: 0.12, pillars: 1, ground: "chasm",
+               decor: {crystal: 0.02, rune: 0.008, shard: 0.04}},
+     ambience: "motes",
+     enemies: {watcher: 2, imp: 2.2, grasp: 1.2, mage: 1.3},
+     bosses: ["eclipse"]},
+
+    {id: "furnace", name: "Furnace",
+     floor: "#140f0c", line: "#21170f", wall: "#2a1d14", top: "#3b291c",
+     dark: 0.64, light: "#ffb37a",
+     terrain: {halls: true, sway: 0.6, rough: 0.08, pillars: 2, ground: "lava", vents: true,
+               decor: {grate: 0.015, ash: 0.09}},
+     ambience: "embers",
+     enemies: {ember: 2.4, turret: 1.6, cinder: 1.8, golem: 1.2},
+     bosses: ["forgeheart"]}
 ];
+
+// which world a floor belongs to (an index that keeps counting; % WORLDS.length for its look)
+export const worldIndex = floor =>
+    Math.floor((floor - 1) / FLOORS_PER_WORLD);
+
+export const worldOf = floor =>
+    WORLDS[worldIndex(floor) % WORLDS.length];
 
 
 /* ---------------- Rarities ---------------- */
@@ -170,17 +222,43 @@ export const STARTER_WEAPONS = ["pistol", "sword"];
 
 /* ---------------- Enemies ---------------- */
 // hp is at floor 1 (grows with ENEMY_HP_GROWTH); cost is how much of a
-// pack's budget it uses; from = first floor it appears on.
-// ai: chase | flutter | shooter | turret | charger | caster | bomber
+// pack's budget it uses; from = the floor of its world (1-3) it first
+// shows up on. Which world each lives in is set in WORLDS. Types that are
+// only ever summoned or split off have no world.
+// ai: see enemies.js. Optional: fire (seconds between attacks), bullet
+// (shot speed), lives (gets back up), splits (into that many slimelets),
+// zone (charges leave burning ground).
 
 export const ENEMIES = {
-    slime:   {name: "Slime",   ai: "chase",   hp: 14, speed: 72,  radius: 12, cost: 1, from: 1, color: "#63d69f"},
-    bat:     {name: "Bat",     ai: "flutter", hp: 8,  speed: 135, radius: 9,  cost: 1, from: 1, color: "#c58cff"},
-    archer:  {name: "Archer",  ai: "shooter", hp: 16, speed: 62,  radius: 11, cost: 2, from: 1, color: "#ff7185", fire: 1.7, bullet: 175},
-    turret:  {name: "Turret",  ai: "turret",  hp: 32, speed: 0,   radius: 13, cost: 2, from: 2, color: "#9ca3af", fire: 2.3, bullet: 140},
-    bomber:  {name: "Bomber",  ai: "bomber",  hp: 12, speed: 98,  radius: 10, cost: 2, from: 2, color: "#facc15"},
-    brute:   {name: "Brute",   ai: "charger", hp: 48, speed: 56,  radius: 16, cost: 3, from: 3, color: "#ff9a5a"},
-    mage:    {name: "Mage",    ai: "caster",  hp: 26, speed: 52,  radius: 12, cost: 3, from: 4, color: "#61a8ff", fire: 3, bullet: 120}
+
+    // Crypt
+    skeleton:  {name: "Skeleton",     ai: "skeleton", hp: 13, speed: 66,  radius: 11, cost: 1, from: 1, color: "#d6d3c4", lives: 1},
+    bat:       {name: "Bat",          ai: "flutter",  hp: 8,  speed: 135, radius: 9,  cost: 1, from: 1, color: "#a78bfa", fly: true},
+    archer:    {name: "Bone Archer",  ai: "shooter",  hp: 15, speed: 62,  radius: 11, cost: 2, from: 1, color: "#ff7185", fire: 1.7, bullet: 175},
+    shade:     {name: "Shade",        ai: "shade",    hp: 16, speed: 72,  radius: 11, cost: 2, from: 2, color: "#7dd3fc", fly: true},
+    necro:     {name: "Necromancer",  ai: "necro",    hp: 24, speed: 56,  radius: 12, cost: 3, from: 2, color: "#86efac", fire: 2.4, bullet: 150},
+
+    // Grove
+    slime:     {name: "Slime",        ai: "chase",    hp: 16, speed: 72,  radius: 12, cost: 1, from: 1, color: "#63d69f", splits: 2},
+    slimelet:  {name: "Slimelet",     ai: "chase",    hp: 5,  speed: 100, radius: 7,  cost: 1, from: 1, color: "#9ae6b4"},
+    wasp:      {name: "Wasp",         ai: "flutter",  hp: 6,  speed: 165, radius: 7,  cost: 1, from: 1, color: "#facc15", fly: true},
+    wolf:      {name: "Thornwolf",    ai: "wolf",     hp: 22, speed: 125, radius: 12, cost: 2, from: 1, color: "#b5c99a", howl: 380},
+    sporecap:  {name: "Sporecap",     ai: "spore",    hp: 26, speed: 28,  radius: 13, cost: 2, from: 2, color: "#e879f9", fire: 3.4, bullet: 90},
+    boomshroom:{name: "Boomshroom",   ai: "bomber",   hp: 12, speed: 98,  radius: 10, cost: 2, from: 2, color: "#fb923c", cloud: true},
+    beetle:    {name: "Horn Beetle",  ai: "charger",  hp: 44, speed: 58,  radius: 15, cost: 3, from: 3, color: "#2dd4bf"},
+
+    // Abyss
+    watcher:   {name: "Watcher",      ai: "eye",      hp: 22, speed: 50,  radius: 12, cost: 2, from: 1, color: "#c4b5fd", fire: 3.6, fly: true},
+    imp:       {name: "Imp",          ai: "imp",      hp: 12, speed: 115, radius: 9,  cost: 2, from: 1, color: "#f472b6", bullet: 230},
+    grasp:     {name: "Grasp",        ai: "grasp",    hp: 34, speed: 150, radius: 13, cost: 3, from: 2, color: "#8b5cf6", bullet: 150},
+    mage:      {name: "Void Mage",    ai: "caster",   hp: 26, speed: 52,  radius: 12, cost: 3, from: 2, color: "#61a8ff", fire: 3, bullet: 120},
+
+    // Furnace
+    ember:     {name: "Ember Imp",    ai: "ember",    hp: 12, speed: 120, radius: 9,  cost: 1, from: 1, color: "#fb923c"},
+    turret:    {name: "Forge Turret", ai: "turret",   hp: 32, speed: 0,   radius: 13, cost: 2, from: 1, color: "#9ca3af", fire: 2.3, bullet: 140},
+    cinder:    {name: "Cinder Spitter", ai: "lobber", hp: 22, speed: 50,  radius: 12, cost: 2, from: 1, color: "#ef4444", fire: 2.8},
+    golem:     {name: "Magma Golem",  ai: "charger",  hp: 60, speed: 48,  radius: 17, cost: 3, from: 2, color: "#ea580c", zone: true}
+
 };
 
 export const ELITE = {hp: 2.6, radius: 1.3, cost: 2, from: 4, chance: 0.12};
@@ -188,8 +266,10 @@ export const ELITE = {hp: 2.6, radius: 1.3, cost: 2, from: 4, chance: 0.12};
 // one pack per floor is led by a champion: a big elite that drops a chest
 export const CHAMPION = {hp: 5, radius: 1.45};
 
-// enemy bullet colours, by index (bullets carry the index, not the colour)
-export const TINTS = ["#ff5c7a", "#61a8ff", "#facc15", "#c58cff"];
+// enemy bullet colours, by index (bullets carry the index, not the colour):
+// red, blue, gold, violet, bone, soul, fire, spore
+export const TINTS = ["#ff5c7a", "#61a8ff", "#facc15", "#c58cff", "#e7e5e4", "#86efac", "#ff8a3d", "#e879f9"];
+export const TINT = {red: 0, blue: 1, gold: 2, violet: 3, bone: 4, soul: 5, fire: 6, spore: 7};
 
 // Packs sleep until someone comes close; then the whole pack (and any pack
 // right next to it) wakes. Far-off sleeping enemies are not simulated.
@@ -201,15 +281,27 @@ export const WAKE = {
     simulate: 960                       // sleepers further than this from everyone are skipped
 };
 
-// bosses rotate by world; hp at their first appearance (floor 3)
+// Bosses: each world names its own (WORLDS.bosses); hp at floor 3
 export const BOSSES = [
-    {id: "warden",  name: "The Warden", hp: 950,  radius: 34, speed: 70,  color: "#e5e5e5", shape: "square",
+    {id: "warden",     name: "The Warden",  hp: 950,  radius: 34, speed: 70,  color: "#e5e5e5", shape: "square",
      patterns: ["spiral", "slam", "summon", "walls"]},
-    {id: "queen",   name: "Hive Queen", hp: 850,  radius: 28, speed: 120, color: "#c58cff", shape: "diamond",
+    {id: "lich",       name: "The Lich",    hp: 880,  radius: 24, speed: 64,  color: "#86efac", shape: "lich",
+     patterns: ["raise", "souls", "spikes", "nova"]},
+    {id: "queen",      name: "Hive Queen",  hp: 850,  radius: 28, speed: 120, color: "#c58cff", shape: "diamond",
      patterns: ["dash", "spray", "brood", "flower"]},
-    {id: "eclipse", name: "Eclipse",    hp: 1050, radius: 30, speed: 80,  color: "#facc15", shape: "ring",
-     patterns: ["lasers", "rings", "orbs", "blink"]}
+    {id: "eclipse",    name: "Eclipse",     hp: 1050, radius: 30, speed: 80,  color: "#facc15", shape: "ring",
+     patterns: ["lasers", "rings", "orbs", "blink"]},
+    {id: "forgeheart", name: "Forgeheart",  hp: 1150, radius: 36, speed: 52,  color: "#fb923c", shape: "core",
+     patterns: ["eruption", "flame", "hammer", "embers"]}
 ];
+
+export const BOSS = Object.fromEntries(BOSSES.map(b => [b.id, b]));
+
+// burning ground and spore clouds left by attacks (see world.js addZone)
+export const ZONES = {
+    fire:  {hurt: 1, every: 0.6, colour: "#ff8a3d"},
+    spore: {hurt: 1, every: 1.4, slow: 0.6, colour: "#d58cf0"}
+};
 
 
 /* ---------------- Meta ---------------- */

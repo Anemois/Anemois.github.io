@@ -1,6 +1,10 @@
-import {TILE, PLAYER, CRIT_MULTIPLIER, SHARD_DROP} from "./data.js";
+import {TILE, PLAYER, CRIT_MULTIPLIER, SHARD_DROP, ENEMIES} from "./data.js";
 import {hitCrate, tileAt, CRATE} from "./map.js";
 import {near} from "./grid.js";
+import {addZone} from "./ground.js";
+import {makeEnemy} from "./enemies.js";
+
+const RISE_TIME = 3.2;          // a fallen skeleton lies this long before it gets up
 
 
 // Shared rules every system uses: events, ids, finding things, damage.
@@ -155,6 +159,17 @@ export function damagePlayer(state, p, amount){
 // Sleeping enemies wake up (and the blow that wakes them always crits).
 // Dummies keep a log instead of losing health.
 // `shot`: a bullet's own hit (a guest's machine already showed the impact)
+// knocks an enemy back (big ones move less)
+export function shove(e, angle, push){
+
+    const scale = push / Math.sqrt(e.r / 12);
+
+    e.kx += Math.cos(angle) * scale;
+    e.ky += Math.sin(angle) * scale;
+
+}
+
+
 export function damageEnemy(state, e, amount, {pid = null, crit = 0, knock = null, push = 90, kind = "hit", shot = false} = {}){
 
     if(!isActive(e))
@@ -185,14 +200,8 @@ export function damageEnemy(state, e, amount, {pid = null, crit = 0, knock = nul
     if(e.asleep)
         state.alarms.push(e);
 
-    if(knock !== null && !e.boss){
-
-        const scale = push / Math.sqrt(e.r / 12);
-
-        e.kx += Math.cos(knock) * scale;
-        e.ky += Math.sin(knock) * scale;
-
-    }
+    if(knock !== null && !e.boss)
+        shove(e, knock, push);
 
     e.hp -= dmg;
 
@@ -204,15 +213,33 @@ export function damageEnemy(state, e, amount, {pid = null, crit = 0, knock = nul
 }
 
 
-export function killEnemy(state, e, player = null){
+// `final`: no getting back up (its summoner died, or it fell off the map)
+export function killEnemy(state, e, player = null, {final = false} = {}){
 
     if(e.dead)
         return;
 
+    // a skeleton falls apart, and soon pulls itself together again
+    if(e.lives > 0 && !final){
+
+        e.lives--;
+        e.hidden = true;
+        e.mode = "bones";
+        e.modeT = RISE_TIME;
+        e.kx = e.ky = 0;
+        e.burnT = 0;
+        e.slowT = 0;
+
+        emit(state, "collapse", {id: e.id, x: e.x, y: e.y, r: e.r, color: e.color});
+
+        return;
+
+    }
+
     e.dead = true;
     e.hp = 0;
 
-    emit(state, "death", {id: e.id, x: e.x, y: e.y, r: e.r, color: e.color, boss: Boolean(e.boss), big: e.elite});
+    emit(state, "death", {id: e.id, x: e.x, y: e.y, r: e.r, color: e.color, boss: Boolean(e.boss), big: e.elite, kind: e.type});
 
     if(player)
         player.kills++;
@@ -220,9 +247,44 @@ export function killEnemy(state, e, player = null){
     if(state.run)
         state.run.kills++;
 
-    // a bomber goes off however it dies
-    if(e.ai === "bomber")
-        explode(state, e.x, e.y, 64, e.bombDmg, {team: "both"});
+    const def = ENEMIES[e.type];
+
+    // a bomber goes off however it dies (and only shoves its friends);
+    // a boomshroom leaves a cloud of spores where it stood
+    if(e.ai === "bomber"){
+
+        explode(state, e.x, e.y, 64, e.bombDmg, {team: "both", allies: 0, look: def?.cloud ? "spore" : "fire"});
+
+        if(def?.cloud)
+            addZone(state, "spore", e.x, e.y, 58, 3.5);
+
+    }
+
+    // an ember imp bursts into a patch of fire
+    if(e.ai === "ember")
+        addZone(state, "fire", e.x, e.y, 30, 2.5);
+
+    // a slime breaks into little ones
+    for(let i = 0; i < e.splits; i++){
+
+        const angle = (i / e.splits) * Math.PI * 2 + state.rng.range(0, 1);
+        const little = makeEnemy(state, "slimelet", e.x + Math.cos(angle) * 6, e.y + Math.sin(angle) * 6, {minion: true, spawn: 0});
+
+        little.alert = 0.25;
+
+        shove(little, angle, 200);
+
+        state.enemies.push(little);
+
+    }
+
+    // whatever it raised or summoned goes with it
+    if(state.enemies.some(other => other.owner === e.id))
+        for(const other of state.enemies)
+            if(other.owner === e.id)
+                killEnemy(state, other, null, {final: true});
+
+    state.lasers = state.lasers.filter(l => l.owner !== e.id);
 
     if(e.minion)
         return;
@@ -230,10 +292,6 @@ export function killEnemy(state, e, player = null){
     const rng = state.rng;
 
     if(e.boss){
-
-        for(const other of state.enemies)
-            if(other.owner === e.id)
-                killEnemy(state, other);
 
         for(let i = 0; i < 24; i++)
             dropPickup(state, "energy", e.x, e.y, 6);
@@ -279,15 +337,28 @@ export const shardValue = state =>
 
 // area damage. team: "p" hurts enemies, "e" hurts players, "both" both
 // `shot`: a bullet's own blast (a guest's machine already showed it)
-export function explode(state, x, y, radius, dmg, {team = "p", pid = null, crit = 0, playerDmg = 2, shot = false} = {}){
+// team: "p" (hurts enemies), "e" (hurts players) or "both". `allies`:
+// how much of `dmg` a "both" blast does to enemies (0 = it only shoves
+// them: a bomber should not wipe out its own pack). `look` picks how the
+// blast is drawn ("fire", "bone", "void"...).
+export function explode(state, x, y, radius, dmg, {team = "p", pid = null, crit = 0, playerDmg = 2, shot = false, allies = 1, look} = {}){
 
     if(team !== "e"){
+
+        const share = team === "both" ? allies : 1;
 
         // copied: hurting things can kill, which may set off more blasts
         for(const e of near(state.grid, x, y, radius).slice()){
 
-            if(isActive(e) && Math.hypot(e.x - x, e.y - y) < radius + e.r)
-                damageEnemy(state, e, dmg, {pid, crit, knock: Math.atan2(e.y - y, e.x - x), push: 160, kind: "boom"});
+            if(!isActive(e) || Math.hypot(e.x - x, e.y - y) >= radius + e.r)
+                continue;
+
+            const angle = Math.atan2(e.y - y, e.x - x);
+
+            if(share > 0)
+                damageEnemy(state, e, dmg * share, {pid, crit, knock: angle, push: 160, kind: "boom"});
+            else if(!e.boss)
+                shove(e, angle, 160);
 
         }
 
@@ -306,7 +377,7 @@ export function explode(state, x, y, radius, dmg, {team = "p", pid = null, crit 
 
     breakCrates(state, x, y, radius);
 
-    emit(state, "boom", {x, y, r: radius, team, pid: pid ?? undefined, shot: shot || undefined});
+    emit(state, "boom", {x, y, r: radius, team, pid: pid ?? undefined, shot: shot || undefined, look});
 
 }
 

@@ -1,11 +1,14 @@
-import {TILE} from "./data.js";
-import {createMap, markWide, FLOOR, WALL, CRATE} from "./map.js";
+import {TILE, WORLDS} from "./data.js";
+import {createMap, markWide, walkable, FLOOR, WALL, CRATE, WATER, CHASM, LAVA, DECOR} from "./map.js";
 
 
-// Every floor is one continuous cave: a handful of lumpy chambers carved
-// out of solid rock, joined by winding tunnels (a spanning tree plus a few
-// loops), then roughened so nothing looks drawn with a ruler. The same
-// seed always gives the same floor, so every player can build it locally.
+// Every floor is one continuous cave: a handful of chambers carved out of
+// solid rock, joined by winding tunnels (a spanning tree plus a few loops),
+// then roughened. Each world carves its own way (WORLDS.terrain): the Crypt
+// and the Furnace cut square halls with straight walls, the Grove and the
+// Abyss grow round caves; then each adds its ground (ponds, chasms, lava
+// rivers), vents and decorations. The same seed always gives the same
+// floor, so every player can build it locally.
 
 const EDGE = 3;                 // rock kept around the outside, tiles
 const QUIET = 14;               // no enemies this close (in steps) to the start
@@ -13,12 +16,31 @@ const TAU = Math.PI * 2;
 
 const NEIGHBOURS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
+export const VENT_PERIOD = 4.2;         // seconds between a vent's eruptions
+export const VENT_WARN = 0.9;           // ...it glows this long before
+export const VENT_BLAST = 0.25;         // ...and burns this long
 
-export function generateFloor(rng, {floor, boss}){
+const GROUNDS = {water: WATER, chasm: CHASM, lava: LAVA};
+
+const DECOR_KIND = {
+    bones: DECOR.BONES, candle: DECOR.CANDLE, crack: DECOR.CRACK, tomb: DECOR.TOMB, cobweb: DECOR.COBWEB,
+    grass: DECOR.GRASS, flower: DECOR.FLOWER, mushroom: DECOR.MUSHROOM, root: DECOR.ROOT,
+    crystal: DECOR.CRYSTAL, rune: DECOR.RUNE, shard: DECOR.SHARD,
+    grate: DECOR.GRATE, ash: DECOR.ASH
+};
+
+// decorations that only sit against rock
+const BY_WALL = new Set(["candle", "cobweb", "root", "mushroom", "crystal"]);
+
+
+// world: the floor's world index (data.js worldIndex)
+export function generateFloor(rng, {floor, boss, world = 0}){
+
+    const style = WORLDS[((world % WORLDS.length) + WORLDS.length) % WORLDS.length].terrain;
 
     for(let attempt = 0; attempt < 40; attempt++){
 
-        const map = build(rng, floor, boss);
+        const map = build(rng, floor, boss, style);
 
         if(map)
             return map;
@@ -30,7 +52,7 @@ export function generateFloor(rng, {floor, boss}){
 }
 
 
-function build(rng, floor, boss){
+function build(rng, floor, boss, style){
 
     const w = Math.min(120, 84 + floor * 3);
     const h = Math.min(88, 62 + floor * 2);
@@ -44,14 +66,14 @@ function build(rng, floor, boss){
     const edges = connect(rng, chambers, Math.max(w, h));
 
     for(const c of chambers)
-        carveChamber(rng, map, c);
+        carveChamber(rng, map, c, style);
 
     for(const [a, b] of edges)
-        carveTunnel(rng, map, chambers[a], chambers[b]);
+        carveTunnel(rng, map, chambers[a], chambers[b], style);
 
     const nooks = carveNooks(rng, map, 3 + Math.floor(floor / 3));
 
-    roughen(rng, map);
+    roughen(rng, map, style.rough);
 
     // the two ends of the cave: the start and, as far from it as it gets, the way out
     let start, end;
@@ -94,11 +116,14 @@ function build(rng, floor, boss){
     for(const c of chambers){
 
         if(c.kind !== "arena")
-            decorate(rng, map, c);
+            decorate(rng, map, c, style);
 
     }
 
     markWide(map);
+
+    if(style.ground)
+        lay(rng, map, chambers, start, GROUNDS[style.ground], floor);
 
     // everything that matters must be reachable by the widest enemies
     const dist = distances(map, start, true);
@@ -128,6 +153,11 @@ function build(rng, floor, boss){
     markWide(map);
 
     placeCamps(rng, map, chambers, dist, floor);
+
+    if(style.vents)
+        placeVents(rng, map, dist, floor);
+
+    sprinkle(rng, map, style.decor);
 
     return map;
 
@@ -248,8 +278,12 @@ function disc(map, cx, cy, r){
 }
 
 
-// an ellipse with a few bulges on its rim (the boss arena stays round)
-function carveChamber(rng, map, c){
+// an ellipse with a few bulges on its rim (the boss arena stays round),
+// or in hall worlds a squared-off room
+function carveChamber(rng, map, c, style){
+
+    if(style.halls && !(c.rx === c.ry && c.rx > 9))
+        return carveHall(rng, map, c);
 
     const x0 = Math.max(EDGE, Math.floor(c.x - c.rx));
     const x1 = Math.min(map.w - EDGE - 1, Math.ceil(c.x + c.rx));
@@ -281,9 +315,59 @@ function carveChamber(rng, map, c){
 }
 
 
+// A hall: a rectangle with its corners cut off, and a few alcoves set
+// into its walls.
+function carveHall(rng, map, c){
+
+    const x0 = Math.max(EDGE, Math.round(c.x - c.rx));
+    const x1 = Math.min(map.w - EDGE - 1, Math.round(c.x + c.rx) - 1);
+    const y0 = Math.max(EDGE, Math.round(c.y - c.ry));
+    const y1 = Math.min(map.h - EDGE - 1, Math.round(c.y + c.ry) - 1);
+    const cut = rng.int(0, 1);
+
+    for(let ty = y0; ty <= y1; ty++){
+
+        for(let tx = x0; tx <= x1; tx++){
+
+            const corner = Math.min(tx - x0, x1 - tx) + Math.min(ty - y0, y1 - ty);
+
+            if(corner >= cut)
+                map.tiles[ty * map.w + tx] = FLOOR;
+
+        }
+
+    }
+
+    const open = (ax, ay, bx, by) => {
+
+        for(let ty = Math.max(EDGE, ay); ty <= Math.min(map.h - EDGE - 1, by); ty++)
+            for(let tx = Math.max(EDGE, ax); tx <= Math.min(map.w - EDGE - 1, bx); tx++)
+                map.tiles[ty * map.w + tx] = FLOOR;
+
+    };
+
+    for(let i = rng.int(1, 3); i > 0; i--){
+
+        const across = rng.int(2, 3);
+        const deep = rng.int(1, 2);
+
+        switch(rng.int(0, 3)){
+
+            case 0: { const x = rng.int(x0 + 1, x1 - across); open(x, y0 - deep, x + across - 1, y0 - 1); break; }
+            case 1: { const x = rng.int(x0 + 1, x1 - across); open(x, y1 + 1, x + across - 1, y1 + deep); break; }
+            case 2: { const y = rng.int(y0 + 1, y1 - across); open(x0 - deep, y, x0 - 1, y + across - 1); break; }
+            default: { const y = rng.int(y0 + 1, y1 - across); open(x1 + 1, y, x1 + deep, y + across - 1); break; }
+
+        }
+
+    }
+
+}
+
+
 // Tunnels bend through a point off to one side, so they curve instead of
 // running straight from chamber to chamber.
-function carveTunnel(rng, map, a, b){
+function carveTunnel(rng, map, a, b, style){
 
     const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
     const bend = rng.range(-0.3, 0.3) * length;
@@ -296,17 +380,17 @@ function carveTunnel(rng, map, a, b){
 
     const width = rng.range(1.2, 1.75);
 
-    dig(rng, map, a, via, width);
-    dig(rng, map, via, b, width);
+    dig(rng, map, a, via, width, 800, style.sway);
+    dig(rng, map, via, b, width, 800, style.sway);
 
 }
 
 
 // a walker heads for a point, swaying, and digs as it goes; now and then
 // the passage opens out into a small cave
-function dig(rng, map, from, to, width, limit = 800){
+function dig(rng, map, from, to, width, limit = 800, wander = 1){
 
-    const sway = rng.range(0.5, 1.1);
+    const sway = rng.range(0.5, 1.1) * wander;
     const pace = rng.range(0.25, 0.5);
 
     let x = from.x;
@@ -394,7 +478,7 @@ function stash(rng, map, nook){
 
 
 // ragged edges: nibble at the walls, then tidy single-tile spikes and nubs
-function roughen(rng, map){
+function roughen(rng, map, nibble = 0.12){
 
     const {w, h, tiles} = map;
 
@@ -439,7 +523,7 @@ function roughen(rng, map){
 
     };
 
-    each((x, y, t) => t === WALL && floors(x, y, false) > 0 && rng.chance(0.12) ? FLOOR : 0);
+    each((x, y, t) => t === WALL && floors(x, y, false) > 0 && rng.chance(nibble) ? FLOOR : 0);
 
     for(let pass = 0; pass < 2; pass++){
 
@@ -469,7 +553,7 @@ function distances(map, from, wide = false){
     const {w, h, tiles} = map;
     const dist = new Int32Array(w * h).fill(-1);
     const queue = new Int32Array(w * h);
-    const open = i => wide ? map.wide[i] === 1 : tiles[i] === FLOOR;
+    const open = i => wide ? map.wide[i] === 1 : walkable(tiles[i]);
 
     let head = 0;
     let tail = 0;
@@ -530,7 +614,7 @@ function farthest(map, chambers, dist, from){
 /* ---------------- Furniture and enemies ---------------- */
 
 // rock pillars and crates inside a chamber, away from its centre
-function decorate(rng, map, c){
+function decorate(rng, map, c, style){
 
     const {w, tiles} = map;
 
@@ -560,15 +644,34 @@ function decorate(rng, map, c){
 
     };
 
-    // 2x2 pillars with two clear tiles all round, so there is always a way past
-    for(let i = c.rx >= 5 ? rng.int(0, 2) : 0; i > 0; i--){
+    const pillar = (x, y) => {
+
+        for(const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]])
+            tiles[(y + dy) * w + x + dx] = WALL;
+
+    };
+
+    // 2x2 pillars with two clear tiles all round, so there is always a way
+    // past; halls stand theirs in mirrored pairs, like columns
+    for(let i = c.rx >= 5 ? rng.int(0, style.pillars ?? 2) : 0; i > 0; i--){
 
         const [x, y] = somewhere(0.4, 0.75);
 
-        if(clear(x, y, 2)){
+        if(style.halls){
 
-            for(const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]])
-                tiles[(y + dy) * w + x + dx] = WALL;
+            const mx = Math.floor(2 * c.x - x - 2);
+
+            if(Math.abs(mx - x) > 3 && clear(x, y, 2) && clear(mx, y, 2)){
+
+                pillar(x, y);
+                pillar(mx, y);
+
+            }
+
+        }
+        else if(clear(x, y, 2)){
+
+            pillar(x, y);
 
         }
 
@@ -657,6 +760,237 @@ function placeCamps(rng, map, chambers, dist, floor){
     }
 
     map.camps = camps.filter(camp => camp.depth >= QUIET);
+
+}
+
+
+/* ---------------- Ground, vents and decorations ---------------- */
+
+// Lays a world's ground (ponds, chasms or lava) in blobs and rifts across
+// the cave. Each piece is kept only if every chamber can still be reached
+// by the biggest enemies; the middle of each chamber stays plain floor
+// (chests, portals and packs stand there).
+function lay(rng, map, chambers, start, kind, floor){
+
+    const {w, h, tiles} = map;
+    const centres = chambers.map(c => tile(map, c));
+
+    const near = (tx, ty) => chambers.some(c => Math.abs(tx + 0.5 - c.x) < 2.5 && Math.abs(ty + 0.5 - c.y) < 2.5);
+
+    // tries one piece; puts things back if it cut the cave apart
+    const piece = cells => {
+
+        const changed = [];
+
+        for(const i of cells){
+
+            const tx = i % w;
+            const ty = (i - tx) / w;
+
+            if(tiles[i] === FLOOR && !near(tx, ty)){
+
+                changed.push(i);
+                tiles[i] = kind;
+
+            }
+
+        }
+
+        if(!changed.length)
+            return;
+
+        markWide(map);
+
+        const dist = distances(map, start, true);
+
+        if(centres.some(i => dist[i] < 0)){
+
+            for(const i of changed)
+                tiles[i] = FLOOR;
+
+            markWide(map);
+
+        }
+
+    };
+
+    const blob = (cx, cy, r) => {
+
+        const cells = [];
+
+        // a few overlapping discs, so no two look alike
+        const parts = [[cx, cy, r]];
+
+        for(let k = rng.int(1, 3); k > 0; k--){
+
+            const a = rng.range(0, TAU);
+
+            parts.push([cx + Math.cos(a) * r * 0.7, cy + Math.sin(a) * r * 0.7, r * rng.range(0.5, 0.85)]);
+
+        }
+
+        for(const [px, py, pr] of parts){
+
+            for(let ty = Math.max(EDGE, Math.floor(py - pr)); ty <= Math.min(h - EDGE - 1, Math.ceil(py + pr)); ty++)
+                for(let tx = Math.max(EDGE, Math.floor(px - pr)); tx <= Math.min(w - EDGE - 1, Math.ceil(px + pr)); tx++)
+                    if((tx + 0.5 - px) ** 2 + (ty + 0.5 - py) ** 2 <= pr * pr)
+                        cells.push(ty * w + tx);
+
+        }
+
+        piece(cells);
+
+    };
+
+    // pools in the chambers
+    for(const c of chambers){
+
+        if(c.kind === "start" || c.kind === "arena")
+            continue;
+
+        // (chasms eat in from the edges: the room drops away into the dark)
+        const count = kind === WATER ? rng.int(1, 3) : kind === CHASM ? rng.int(2, 4) : rng.int(0, 2) + (c.rx > 6 ? 1 : 0);
+
+        for(let i = 0; i < count; i++){
+
+            const a = rng.range(0, TAU);
+            const k = kind === CHASM ? rng.range(0.6, 1.05) : rng.range(0.35, 0.75);
+
+            blob(c.x + Math.cos(a) * c.rx * k, c.y + Math.sin(a) * c.ry * k, kind === CHASM ? rng.range(2, 3.6) : rng.range(1.5, kind === WATER ? 3.2 : 2.8));
+
+        }
+
+    }
+
+    // rifts: long thin runs across the cave (lava rivers, cracks into the dark)
+    if(kind !== WATER){
+
+        for(let i = 1 + Math.min(3, Math.floor(floor / 4)); i > 0; i--){
+
+            const c = rng.pick(chambers);
+
+            if(c.kind === "start" || c.kind === "arena")
+                continue;
+
+            const a = rng.range(0, TAU);
+            const length = rng.range(8, 16);
+            const cells = [];
+
+            let x = c.x + Math.cos(a) * c.rx * 0.6;
+            let y = c.y + Math.sin(a) * c.ry * 0.6;
+            let heading = a + Math.PI / 2 + rng.range(-0.6, 0.6);
+
+            for(let d = 0; d < length; d += 0.5){
+
+                heading += rng.range(-0.25, 0.25);
+                x += Math.cos(heading) * 0.5;
+                y += Math.sin(heading) * 0.5;
+
+                const tx = Math.floor(x);
+                const ty = Math.floor(y);
+
+                if(tx < EDGE || ty < EDGE || tx >= w - EDGE || ty >= h - EDGE)
+                    break;
+
+                cells.push(ty * w + tx);
+
+                // chasms open wide; lava runs in narrower channels
+                if(kind === CHASM || rng.chance(0.4))
+                    cells.push(ty * w + tx + 1);
+
+                if(kind === CHASM && rng.chance(0.5))
+                    cells.push((ty + 1) * w + tx);
+
+            }
+
+            piece(cells);
+
+        }
+
+    }
+    else{
+
+        // and puddles along the tunnels
+        for(let i = rng.int(4, 8); i > 0; i--){
+
+            const tx = rng.int(EDGE, w - EDGE - 1);
+            const ty = rng.int(EDGE, h - EDGE - 1);
+
+            if(tiles[ty * w + tx] === FLOOR)
+                blob(tx + 0.5, ty + 0.5, rng.range(1, 1.7));
+
+        }
+
+    }
+
+    markWide(map);
+
+}
+
+
+// fire vents in the floor, none too near the start
+function placeVents(rng, map, dist, floor){
+
+    const wanted = 6 + Math.min(14, floor);
+
+    for(let tries = 0; tries < 600 && map.vents.length < wanted; tries++){
+
+        const tx = rng.int(EDGE, map.w - EDGE - 1);
+        const ty = rng.int(EDGE, map.h - EDGE - 1);
+        const i = ty * map.w + tx;
+
+        if(map.tiles[i] !== FLOOR || dist[i] < QUIET || map.decor[i])
+            continue;
+
+        map.decor[i] = DECOR.VENT;
+        map.vents.push({x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE, phase: rng.range(0, VENT_PERIOD)});
+
+    }
+
+}
+
+
+// things lying about: bones, grass, crystals... (only drawn)
+function sprinkle(rng, map, decor){
+
+    if(!decor)
+        return;
+
+    const {w, h, tiles} = map;
+    const kinds = Object.entries(decor);
+
+    const rock = (x, y) => tiles[y * w + x] === WALL;
+
+    for(let ty = EDGE; ty < h - EDGE; ty++){
+
+        for(let tx = EDGE; tx < w - EDGE; tx++){
+
+            const i = ty * w + tx;
+
+            if(tiles[i] !== FLOOR || map.decor[i])
+                continue;
+
+            const byWall = rock(tx, ty - 1) || rock(tx - 1, ty) || rock(tx + 1, ty) || rock(tx, ty + 1);
+            const corner = rock(tx, ty - 1) && (rock(tx - 1, ty) || rock(tx + 1, ty));
+
+            for(const [kind, share] of kinds){
+
+                if(kind === "cobweb" ? !corner : BY_WALL.has(kind) && !byWall)
+                    continue;
+
+                if(rng.chance(share)){
+
+                    map.decor[i] = DECOR_KIND[kind];
+
+                    break;
+
+                }
+
+            }
+
+        }
+
+    }
 
 }
 

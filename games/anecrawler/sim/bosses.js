@@ -1,7 +1,8 @@
-import {BOSSES, ENEMY_HP_GROWTH, FLOORS_PER_WORLD} from "./data.js";
+import {BOSS, ENEMY_HP_GROWTH, FLOORS_PER_WORLD, TINT, worldOf} from "./data.js";
 import {spotNear} from "./map.js";
 import {moveBody, angleTo, castRay, DEG} from "./physics.js";
 import {emit, newId, enemyBullet, ring} from "./world.js";
+import {addZone} from "./ground.js";
 import {makeEnemy} from "./enemies.js";
 
 
@@ -14,24 +15,18 @@ const LEAVE_TIME = 3;           // ...for this long, and the boss resets
 // in. It picks one of four attack patterns at a time, rests a moment, then
 // picks another. Below half health it gets angry: faster, denser attacks.
 // It never leaves the lair; run away and it goes back to sleep, healed.
-
-export function bossFor(floor){
-
-    const world = Math.ceil(floor / FLOORS_PER_WORLD) - 1;
-
-    return BOSSES[world % BOSSES.length];
-
-}
-
+// Each world has its own boss (or a choice of them: WORLDS.bosses).
 
 export function spawnBoss(state){
 
-    const def = bossFor(state.floor);
+    const def = BOSS[state.rng.pick(worldOf(state.floor).bosses)];
     const arena = state.map.arena;
     const hp = def.hp * ENEMY_HP_GROWTH ** (state.floor - FLOORS_PER_WORLD) * (1 + (state.players.length - 1) * 0.6);
 
     state.enemies.push({
         ...makeEnemy(state, "slime", arena.x, arena.y, {asleep: true, spawn: 0}),
+        splits: 0,
+        lives: 0,
         type: def.id,
         ai: "boss",
         boss: def.id,
@@ -104,7 +99,7 @@ export function updateBoss(state, e, target, dt, slow){
         if(e.rest <= 0){
 
             // any pattern but the last one
-            const name = state.rng.pick(bossFor(state.floor).patterns.filter(other => other !== e.last));
+            const name = state.rng.pick(BOSS[e.boss].patterns.filter(other => other !== e.last));
 
             e.last = name;
             e.pattern = {name, t: 0, step: 0, wait: 0, count: 0, fire: 0};
@@ -157,8 +152,9 @@ function reset(state, e){
 }
 
 
-// between attacks: the Warden plods after you, the Queen circles you,
-// Eclipse drifts around the middle of its lair
+// between attacks: the Warden and Forgeheart plod after you, the Queen
+// circles you, Eclipse drifts around the middle of its lair, the Lich
+// keeps its distance
 function roam(state, e, target, dt, slow){
 
     const d = Math.hypot(target.x - e.x, target.y - e.y);
@@ -177,7 +173,10 @@ function roam(state, e, target, dt, slow){
 
     }
 
-    if(e.boss === "warden" && d < e.r + 30)
+    if(e.boss === "lich")
+        angle = d < 200 ? toward + Math.PI * 0.75 : d > 300 ? toward : toward + Math.PI / 2;
+
+    if((e.boss === "warden" || e.boss === "forgeheart") && d < e.r + 30)
         return;
 
     e.angle = angle;
@@ -306,7 +305,7 @@ const PATTERNS = {
 
         if(P.step === 0){
 
-            summon(state, e, "slime", e.enraged ? 4 : 3);
+            summon(state, e, "skeleton", e.enraged ? 4 : 3);
 
             P.step = 1;
 
@@ -432,7 +431,7 @@ const PATTERNS = {
 
         if(P.step === 0){
 
-            summon(state, e, "bat", e.enraged ? 5 : 4);
+            summon(state, e, "wasp", e.enraged ? 5 : 4);
 
             P.step = 1;
 
@@ -601,6 +600,285 @@ const PATTERNS = {
         }
 
         return P.count >= 3 && P.fire <= 0;
+
+    },
+
+
+    /* ---- The Lich ---- */
+
+    // raises a ring of skeletons around the lair
+    raise(state, e, target, dt, P){
+
+        if(P.step === 0){
+
+            summon(state, e, "skeleton", e.enraged ? 4 : 3);
+
+            emit(state, "chant", {id: e.id, x: e.x, y: e.y, color: e.color, big: true});
+
+            P.step = 1;
+
+        }
+
+        return P.t > 1;
+
+    },
+
+
+    // waves of slow souls that home in on you
+    souls(state, e, target, dt, P){
+
+        P.fire -= dt;
+
+        if(P.fire <= 0 && P.count < 2){
+
+            P.fire = 1;
+            P.count++;
+
+            const n = e.enraged ? 9 : 6;
+            const turn = P.count * 0.3;
+
+            for(let i = 0; i < n; i++)
+                enemyBullet(state, e, turn + (i / n) * Math.PI * 2, 105, {r: 7, homing: 1.5, life: 5, color: TINT.soul});
+
+        }
+
+        return P.count >= 2 && P.fire <= -0.6;
+
+    },
+
+
+    // lines of bone spikes burst from the floor towards everyone, one
+    // after another (a ring marks each before it breaks the surface)
+    spikes(state, e, target, dt, P){
+
+        if(P.step === 0){
+
+            const fans = e.enraged ? [-0.4, 0, 0.4] : [0];
+
+            for(const p of state.players){
+
+                if(p.dead)
+                    continue;
+
+                for(const fan of fans){
+
+                    const angle = angleTo(e, p) + fan;
+                    const length = castRay(state.map, e.x, e.y, angle, 460).length;
+
+                    for(let d = e.r + 20, i = 0; d < length; d += 34, i++){
+
+                        state.strikes.push({
+                            id: newId(state), team: "e", look: "bone",
+                            x: e.x + Math.cos(angle) * d, y: e.y + Math.sin(angle) * d,
+                            r: 22, delay: 0.55 + i * 0.07, total: 0.55 + i * 0.07, dmg: 1, dead: false
+                        });
+
+                    }
+
+                }
+
+            }
+
+            P.step = 1;
+
+        }
+
+        return P.t > 1.6;
+
+    },
+
+
+    // vanishes to the middle of the lair, then two rings with a gap each
+    nova(state, e, target, dt, P){
+
+        if(P.step === 0){
+
+            const arena = state.map.arena;
+
+            P.to = spotNear(state.rng, state.map, arena.x, arena.y, 0, 60);
+            P.wait = 0.45;
+            P.step = 1;
+            e.hidden = true;
+
+            emit(state, "blink", {x: e.x, y: e.y, color: e.color});
+
+            return false;
+
+        }
+
+        if(P.step === 1){
+
+            P.wait -= dt;
+
+            if(P.wait > 0)
+                return false;
+
+            e.x = P.to.x;
+            e.y = P.to.y;
+            e.hidden = false;
+            P.step = 2;
+            P.fire = 0.35;
+
+            emit(state, "blink", {x: e.x, y: e.y, color: e.color});
+
+            return false;
+
+        }
+
+        P.fire -= dt;
+
+        if(P.fire <= 0 && P.count < 2){
+
+            P.fire = 0.55;
+            P.count++;
+
+            const n = 30;
+            const aim = angleTo(e, target) + (P.count === 2 ? Math.PI : 0) + state.rng.range(-0.5, 0.5);
+
+            for(let i = 3; i <= n - 3; i++)
+                enemyBullet(state, e, aim + (i / n) * Math.PI * 2, e.enraged ? 150 : 130, {color: TINT.soul});
+
+        }
+
+        return P.count >= 2 && P.fire <= -0.3;
+
+    },
+
+
+    /* ---- Forgeheart ---- */
+
+    // molten rock rains around everyone; where it lands, the floor burns
+    eruption(state, e, target, dt, P){
+
+        P.fire -= dt;
+
+        if(P.fire <= 0 && P.t < 2.4){
+
+            P.fire = e.enraged ? 0.12 : 0.18;
+
+            const living = state.players.filter(p => !p.dead);
+            const p = living.length ? state.rng.pick(living) : target;
+            const spot = spotNear(state.rng, state.map, p.x, p.y, 0, 150);
+
+            state.strikes.push({
+                id: newId(state), team: "e", look: "meteor",
+                x: spot.x, y: spot.y, r: 40, delay: 0.95, total: 0.95, dmg: 1, dead: false,
+                zone: {kind: "fire", r: 34, life: 2.6}
+            });
+
+        }
+
+        return P.t > 3.4;
+
+    },
+
+
+    // a sweeping cone of fire
+    flame(state, e, target, dt, P){
+
+        if(P.step === 0){
+
+            P.base = angleTo(e, target);
+            P.step = 1;
+
+        }
+
+        P.fire -= dt;
+
+        while(P.fire <= 0){
+
+            P.fire += 0.035;
+
+            const sweep = Math.sin(P.t * (e.enraged ? 2.4 : 1.8)) * 1.05;
+
+            enemyBullet(state, e, P.base + sweep + state.rng.range(-0.08, 0.08), state.rng.range(190, 240), {r: 6, life: 1.1, color: TINT.fire});
+
+        }
+
+        return P.t > (e.enraged ? 3.2 : 2.6);
+
+    },
+
+
+    // brings its fists down: a ring of fire bullets, and burning lines
+    // that run out across the floor (they turn a little each time)
+    hammer(state, e, target, dt, P){
+
+        if(P.step === 0){
+
+            P.count = e.enraged ? 3 : 2;
+            P.step = 1;
+
+        }
+
+        if(P.step === 1){
+
+            P.wait = 0.85;
+            P.step = 2;
+
+            state.strikes.push({id: newId(state), team: "e", look: "slam", x: e.x, y: e.y, r: e.r + 60, delay: 0.85, total: 0.85, dmg: 2, dead: false});
+
+            return false;
+
+        }
+
+        P.wait -= dt;
+
+        if(P.wait > 0)
+            return false;
+
+        if(P.step === 2){
+
+            ring(state, e, e.enraged ? 22 : 16, 150, state.rng.range(0, 1), {color: TINT.fire});
+
+            const lines = e.enraged ? 8 : 6;
+
+            e.spin += Math.PI / lines;
+
+            for(let k = 0; k < lines; k++){
+
+                const angle = e.spin + k * Math.PI * 2 / lines;
+                const length = castRay(state.map, e.x, e.y, angle, 320).length;
+
+                for(let d = e.r + 30; d < length; d += 34)
+                    addZone(state, "fire", e.x + Math.cos(angle) * d, e.y + Math.sin(angle) * d, 20, 2.2 + d / 400);
+
+            }
+
+            emit(state, "thud", {x: e.x, y: e.y, big: true});
+
+            P.count--;
+            P.step = 3;
+            P.wait = 0.55;
+
+            return false;
+
+        }
+
+        if(P.count > 0){
+
+            P.step = 1;
+
+            return false;
+
+        }
+
+        return true;
+
+    },
+
+
+    embers(state, e, target, dt, P){
+
+        if(P.step === 0){
+
+            summon(state, e, "ember", e.enraged ? 4 : 3);
+
+            P.step = 1;
+
+        }
+
+        return P.t > 0.8;
 
     }
 

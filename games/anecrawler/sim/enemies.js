@@ -1,11 +1,12 @@
-import {ENEMIES, ELITE, CHAMPION, ENEMY_HP_GROWTH, WAKE} from "./data.js";
+import {ENEMIES, ELITE, CHAMPION, ENEMY_HP_GROWTH, WAKE, FLOORS_PER_WORLD, TINT, worldOf} from "./data.js";
 import {spotNear} from "./map.js";
-import {moveBody, lineOfSight, angleTo, DEG} from "./physics.js";
+import {moveBody, lineOfSight, angleTo, angleDiff, castRay, clamp, DEG} from "./physics.js";
 import {near, fillGrid} from "./grid.js";
 import {navAngle} from "./nav.js";
 import {
     emit, newId, damagePlayer, damageEnemy, killEnemy, enemyBullet, ring
 } from "./world.js";
+import {groundSpeed, addZone} from "./ground.js";
 import {spawnBoss, updateBoss} from "./bosses.js";
 
 
@@ -15,8 +16,13 @@ const LOSE_RANGE = 1000;        // awake enemies this far from everyone...
 const LOSE_TIME = 6;            // ...for this long doze off again
 const TURRET_RANGE = 520;
 
+const TAU = Math.PI * 2;
+
 const pushList = [];
 const wakeList = [];
+
+// modes in which an enemy rushes through its friends instead of bumping them
+const RUSHING = new Set(["charge", "lunge"]);
 
 
 /* ---------------- Packs ---------------- */
@@ -37,13 +43,15 @@ export function populate(state){
 }
 
 
+// Packs come from the floor's own world (WORLDS.enemies): a world's later
+// creatures join from its second or third floor.
 function spawnPack(state, camp, pack){
 
     const rng = state.rng;
-    const types = Object.keys(ENEMIES).filter(id => ENEMIES[id].from <= state.floor);
-
-    // newer enemy types show up a little more than old ones
-    const weights = Object.fromEntries(types.map(id => [id, 1 + (ENEMIES[id].from - 1) * 0.15]));
+    const stage = (state.floor - 1) % FLOORS_PER_WORLD + 1;
+    const roster = Object.entries(worldOf(state.floor).enemies).filter(([id]) => ENEMIES[id].from <= stage);
+    const types = roster.map(([id]) => id);
+    const weights = Object.fromEntries(roster);
 
     const party = 1 + (state.players.length - 1) * 0.5;
 
@@ -97,6 +105,7 @@ export function makeEnemy(state, type, x, y, {
     const def = ENEMIES[type];
     const rng = state.rng;
     const tough = champion ? CHAMPION.hp : elite ? ELITE.hp : 1;
+    const under = def.ai === "grasp";
     const big = champion ? CHAMPION.radius : elite ? ELITE.radius : 1;
     const hp = def.hp * hpScale(state) * tough;
 
@@ -131,8 +140,8 @@ export function makeEnemy(state, type, x, y, {
         spawn,
         spawnTime: spawn || SPAWN_TIME,
         dead: false,
-        hidden: false,
-        mode: "move",
+        hidden: under,
+        mode: under ? "under" : "move",
         modeT: 0,
         t: rng.range(0, 6),
         fireT: def.fire ? rng.range(0.8, def.fire + 0.6) : 0,
@@ -149,6 +158,9 @@ export function makeEnemy(state, type, x, y, {
         burnTick: 0,
         burnBy: null,
         flash: 0,
+        lives: minion ? 0 : def.lives ?? 0,     // gets back up this many times
+        splits: minion ? 0 : def.splits ?? 0,   // breaks into this many little ones
+        fly: Boolean(def.fly),
         bombDmg: 22 * hpScale(state)
     };
 
@@ -172,6 +184,8 @@ export function makeDummy(state, x, y, {r = 14, strafe = 0, label = "Dummy", sho
         speed: 0,
         color: "#9ca3af",
         dummy: true,
+        splits: 0,
+        lives: 0,
         strafe,
         shoots,
         fireT: 1,
@@ -255,9 +269,15 @@ function soundAlarms(state){
         if(e.boss)
             continue;
 
-        for(const other of near(state.grid, e.x, e.y, WAKE.spread, wakeList)){
+        // a wolf's howl carries further
+        const spread = ENEMIES[e.type]?.howl ?? WAKE.spread;
 
-            if(other.asleep && !other.boss && (other.pack === e.pack || Math.hypot(other.x - e.x, other.y - e.y) < WAKE.spread))
+        if(spread > WAKE.spread)
+            emit(state, "howl", {x: e.x, y: e.y, r: spread});
+
+        for(const other of near(state.grid, e.x, e.y, spread, wakeList)){
+
+            if(other.asleep && !other.boss && (other.pack === e.pack || Math.hypot(other.x - e.x, other.y - e.y) < spread))
                 queue.push(other);
 
         }
@@ -288,6 +308,26 @@ export function updateEnemies(state, dt){
 
         e.flash = Math.max(0, e.flash - dt);
         e.t += dt;
+
+        // a fallen skeleton pulls itself together
+        if(e.mode === "bones"){
+
+            e.modeT -= dt;
+
+            if(e.modeT <= 0){
+
+                e.mode = "move";
+                e.hidden = false;
+                e.hp = e.maxHp * 0.5;
+                e.alert = 0.35;
+
+                emit(state, "rise", {id: e.id, x: e.x, y: e.y, r: e.r, color: e.color});
+
+            }
+
+            continue;
+
+        }
 
         if(e.dummy){
 
@@ -459,17 +499,22 @@ function contact(state, e){
 }
 
 
-// a little room between neighbours
+// A little room between neighbours. Enemies rushing at you (a charge, a
+// lunge) go straight through their friends, and nothing bumps the ones
+// that are underground, faded out or lying in pieces.
+const apart = e =>
+    e.dead || e.spawn > 0 || e.dummy || e.hidden || RUSHING.has(e.mode);
+
 function separate(state){
 
     for(const a of state.live){
 
-        if(a.dead || a.spawn > 0 || a.dummy || a.asleep)
+        if(apart(a) || a.asleep)
             continue;
 
         for(const b of near(state.grid, a.x, a.y, a.r, pushList)){
 
-            if(b.id <= a.id || b.dead || b.spawn > 0 || b.dummy)
+            if(b.id <= a.id || apart(b))
                 continue;
 
             const dx = b.x - a.x;
@@ -496,9 +541,13 @@ function separate(state){
 }
 
 
+// water slows walkers (not flyers)
 function walk(state, e, angle, speed, dt){
 
     e.angle = angle;
+
+    if(!e.fly)
+        speed *= groundSpeed(state.map, null, e.x, e.y);
 
     return moveBody(state.map, e, Math.cos(angle) * speed * dt, Math.sin(angle) * speed * dt);
 
@@ -723,9 +772,13 @@ const AI = {
                     e.modeT = 0.8;
 
                     if(e.elite)
-                        ring(state, e, 10, 150);
+                        ring(state, e, 10, 150, 0, ENEMIES[e.type].zone ? {color: TINT.fire} : {});
 
-                    emit(state, "thud", {x: e.x, y: e.y});
+                    // a magma golem's landing sets the floor alight
+                    if(ENEMIES[e.type].zone)
+                        addZone(state, "fire", e.x, e.y, 54, 3.2);
+
+                    emit(state, "thud", {x: e.x, y: e.y, big: Boolean(ENEMIES[e.type].zone)});
 
                 }
 
@@ -840,9 +893,672 @@ const AI = {
 
         walk(state, e, e.targetD < 180 * 180 ? toward + Math.PI : toward + e.side * Math.PI / 2, e.speed * slow, dt);
 
+    },
+
+
+    /* ---- Crypt ---- */
+
+    // shuffles straight at you, rattling; knocked down, it gets back up
+    // once (see killEnemy and the "bones" step in updateEnemies)
+    skeleton(state, e, target, dt, slow){
+
+        seek(state, e, target, e.speed * slow, dt, Math.sin(e.t * 4 + e.id) * 0.18);
+
+    },
+
+
+    // drifts towards you; then fades out (nothing can touch it), slips round
+    // to your side, shows itself with a wail and lunges
+    shade(state, e, target, dt, slow){
+
+        const rng = state.rng;
+
+        e.cool -= dt;
+
+        switch(e.mode){
+
+            case "fade": {
+
+                e.modeT -= dt;
+
+                const spot = {x: target.x + Math.cos(e.slip) * 70, y: target.y + Math.sin(e.slip) * 70};
+
+                walk(state, e, angleTo(e, spot), e.speed * 2.4 * slow, dt);
+
+                if(e.modeT <= 0){
+
+                    e.hidden = false;
+                    e.mode = "wind";
+                    e.modeT = 0.34;
+                    e.angle = angleTo(e, target);
+
+                    emit(state, "wail", {x: e.x, y: e.y, color: e.color});
+
+                }
+
+                return;
+
+            }
+
+            case "wind":
+
+                e.modeT -= dt;
+
+                if(e.modeT > 0.12)
+                    e.angle = angleTo(e, target);
+
+                if(e.modeT <= 0){
+
+                    e.mode = "lunge";
+                    e.modeT = 0.3;
+
+                }
+
+                return;
+
+            case "lunge":
+
+                e.modeT -= dt;
+
+                if(walk(state, e, e.angle, 380 * slow, dt) || e.modeT <= 0){
+
+                    e.mode = "move";
+                    e.cool = rng.range(2.4, 3.6);
+
+                }
+
+                return;
+
+        }
+
+        if(e.cool <= 0 && e.targetD < 320 * 320){
+
+            e.mode = "fade";
+            e.modeT = 1.1;
+            e.hidden = true;
+            e.slip = angleTo(target, e) + rng.range(-1.6, 1.6);
+
+            emit(state, "fade", {x: e.x, y: e.y, color: e.color});
+
+            return;
+
+        }
+
+        seek(state, e, target, e.speed * slow, dt, Math.sin(e.t * 2) * 0.4);
+
+    },
+
+
+    // keeps its distance, raises skeletons from the floor and throws bone
+    // shards; its skeletons fall when it does
+    necro(state, e, target, dt, slow){
+
+        const def = ENEMIES[e.type];
+        const rng = state.rng;
+
+        e.cool -= dt;
+        e.fireT -= dt;
+
+        if(e.mode === "raise"){
+
+            e.modeT -= dt;
+
+            if(e.modeT <= 0){
+
+                e.mode = "move";
+
+                for(let i = e.elite ? 3 : 2; i > 0; i--){
+
+                    const spot = spotNear(rng, state.map, e.x, e.y, 30, 90);
+
+                    state.enemies.push(makeEnemy(state, "skeleton", spot.x, spot.y, {minion: true, owner: e.id, spawn: 0.7}));
+
+                }
+
+            }
+
+            return;
+
+        }
+
+        if(e.cool <= 0 && e.sees && minions(state, e) < 3){
+
+            e.mode = "raise";
+            e.modeT = 0.9;
+            e.cool = rng.range(6, 8);
+
+            emit(state, "chant", {id: e.id, x: e.x, y: e.y, color: e.color});
+
+            return;
+
+        }
+
+        if(!e.sees){
+
+            e.mode = "move";
+
+            seek(state, e, target, e.speed * slow, dt);
+
+            return;
+
+        }
+
+        if(e.fireT <= 0){
+
+            if(!windUp(e, dt, 0.4))
+                return;
+
+            const a = angleTo(e, target);
+
+            for(const offset of [-12, 0, 12])
+                enemyBullet(state, e, a + offset * DEG, def.bullet, {r: 4, color: TINT.bone});
+
+            e.fireT = def.fire * (e.elite ? 0.7 : 1) * rng.range(0.85, 1.2);
+
+            return;
+
+        }
+
+        keepAway(state, e, target, dt, e.speed * slow, 170, 290);
+
+    },
+
+
+    /* ---- Grove ---- */
+
+    // circles you at a distance with its pack, then lunges in and peels off
+    wolf(state, e, target, dt, slow){
+
+        e.cool -= dt;
+
+        switch(e.mode){
+
+            case "wind":
+
+                e.modeT -= dt;
+
+                if(e.modeT > 0.12)
+                    e.angle = angleTo(e, target);
+
+                if(e.modeT <= 0){
+
+                    e.mode = "lunge";
+                    e.modeT = 0.34;
+
+                }
+
+                return;
+
+            case "lunge":
+
+                e.modeT -= dt;
+
+                if(walk(state, e, e.angle, 430 * slow, dt) || e.modeT <= 0){
+
+                    e.mode = "move";
+                    e.cool = state.rng.range(1.8, 2.8);
+                    e.side = -e.side;
+
+                }
+
+                return;
+
+        }
+
+        if(!e.sees){
+
+            seek(state, e, target, e.speed * slow, dt);
+
+            return;
+
+        }
+
+        const d = Math.sqrt(e.targetD);
+
+        if(e.cool <= 0 && d < 230){
+
+            e.mode = "wind";
+            e.modeT = 0.4;
+            e.angle = angleTo(e, target);
+
+            return;
+
+        }
+
+        const toward = angleTo(e, target);
+        const angle = d > 170 ? toward + e.side * 0.6 : d < 110 ? toward + Math.PI - e.side * 0.5 : toward + e.side * Math.PI / 2;
+
+        if(walk(state, e, angle, e.speed * slow, dt))
+            e.side = -e.side;
+
+    },
+
+
+    // a mushroom: hops slowly closer, and when you come near it swells and
+    // puffs a spore cloud (it slows and stings) with a ring of spores
+    spore(state, e, target, dt, slow){
+
+        const def = ENEMIES[e.type];
+
+        e.fireT -= dt;
+
+        if(e.mode === "puff"){
+
+            e.modeT -= dt;
+
+            if(e.modeT <= 0){
+
+                e.mode = "move";
+                e.fireT = def.fire * (e.elite ? 0.75 : 1);
+
+                addZone(state, "spore", e.x, e.y, e.elite ? 90 : 70, 4.5);
+
+                ring(state, e, e.elite ? 12 : 8, def.bullet, state.rng.range(0, 1), {r: 6, life: 3, color: TINT.spore});
+
+                emit(state, "puff", {x: e.x, y: e.y, r: e.elite ? 90 : 70});
+
+            }
+
+            return;
+
+        }
+
+        if(e.fireT <= 0 && e.sees && e.targetD < 200 * 200){
+
+            e.mode = "puff";
+            e.modeT = 0.6;
+
+            return;
+
+        }
+
+        // little hops
+        if(e.targetD > 140 * 140)
+            seek(state, e, target, e.speed * slow * Math.max(0, Math.sin(e.t * 5)) * 2, dt);
+
+    },
+
+
+    /* ---- Abyss ---- */
+
+    // floats at a distance; stares (a warning line that follows you, then
+    // stops), then burns a beam down that line
+    eye(state, e, target, dt, slow){
+
+        const def = ENEMIES[e.type];
+        const rng = state.rng;
+
+        e.fireT -= dt;
+
+        if(e.mode === "focus"){
+
+            e.modeT -= dt;
+
+            if(e.modeT > 0.35)
+                e.angle += clamp(angleDiff(e.angle, angleTo(e, target)), -2.2 * dt, 2.2 * dt);
+
+            e.telegraph = {angle: e.angle, length: castRay(state.map, e.x, e.y, e.angle, 560).length};
+
+            if(e.modeT <= 0){
+
+                e.mode = "beam";
+                e.modeT = 0.5;
+                e.telegraph = null;
+
+                state.lasers.push({
+                    id: newId(state), owner: e.id, x: e.x, y: e.y, angle: e.angle,
+                    length: castRay(state.map, e.x, e.y, e.angle, 560).length,
+                    warn: 0, live: 0.45, spin: 0, reach: 560, width: 5, tint: TINT.violet, dead: false
+                });
+
+                emit(state, "zap", {x: e.x, y: e.y, angle: e.angle});
+
+            }
+
+            return;
+
+        }
+
+        if(e.mode === "beam"){
+
+            e.modeT -= dt;
+
+            if(e.modeT <= 0){
+
+                e.mode = "move";
+                e.fireT = def.fire * (e.elite ? 0.7 : 1) * rng.range(0.85, 1.2);
+
+            }
+
+            return;
+
+        }
+
+        if(!e.sees){
+
+            seek(state, e, target, e.speed * slow, dt);
+
+            return;
+
+        }
+
+        if(e.fireT <= 0 && e.targetD < 480 * 480){
+
+            e.mode = "focus";
+            e.modeT = 1.05;
+            e.angle = angleTo(e, target) + rng.range(-0.5, 0.5);
+
+            return;
+
+        }
+
+        keepAway(state, e, target, dt, e.speed * slow, 200, 320);
+
+    },
+
+
+    // skitters about; blinks right next to you, fires two quick bursts,
+    // then blinks away again
+    imp(state, e, target, dt, slow){
+
+        const def = ENEMIES[e.type];
+        const rng = state.rng;
+
+        e.cool -= dt;
+
+        switch(e.mode){
+
+            case "blink":
+
+                e.modeT -= dt;
+
+                if(e.modeT <= 0){
+
+                    e.x = e.blinkTo.x;
+                    e.y = e.blinkTo.y;
+                    e.hidden = false;
+                    e.mode = e.next;
+                    e.modeT = 0.32;
+                    e.volley = 0;
+
+                    emit(state, "blink", {x: e.x, y: e.y, color: e.color});
+
+                }
+
+                return;
+
+            case "aim":
+
+                e.modeT -= dt;
+
+                if(e.modeT > 0)
+                    return;
+
+                for(const offset of [-9, 0, 9])
+                    enemyBullet(state, e, angleTo(e, target) + offset * DEG, def.bullet, {r: 4, color: TINT.violet});
+
+                if(++e.volley < 2){
+
+                    e.modeT = 0.2;
+
+                    return;
+
+                }
+
+                blinkTo(state, e, target, 170, 240, "move");
+
+                e.cool = rng.range(1.2, 2);
+
+                return;
+
+        }
+
+        if(e.cool <= 0 && e.sees){
+
+            blinkTo(state, e, target, 70, 110, "aim");
+
+            return;
+
+        }
+
+        seek(state, e, target, e.speed * slow, dt, Math.sin(e.t * 7 + e.id) * 0.8);
+
+    },
+
+
+    // Lives under the floor (a ripple nothing can hit), creeps up close and
+    // bursts out: it whips everything in front of it, spits, then sinks
+    // and comes up somewhere else.
+    grasp(state, e, target, dt, slow){
+
+        const def = ENEMIES[e.type];
+
+        switch(e.mode){
+
+            case "under":
+
+                e.hidden = true;
+
+                if(e.targetD > 150 * 150){
+
+                    seek(state, e, target, e.speed * slow, dt);
+
+                    return;
+
+                }
+
+                e.mode = "rise";
+                e.modeT = 0.6;
+
+                emit(state, "rumble", {x: e.x, y: e.y, r: e.r});
+
+                return;
+
+            case "rise":
+
+                e.modeT -= dt;
+
+                if(e.modeT <= 0){
+
+                    e.hidden = false;
+                    e.mode = "up";
+                    e.modeT = 5;
+                    e.cool = 0.5;
+
+                    emit(state, "emerge", {x: e.x, y: e.y, r: e.r, color: e.color});
+
+                }
+
+                return;
+
+            case "up":
+
+                e.modeT -= dt;
+                e.cool -= dt;
+                e.angle = angleTo(e, target);
+
+                if(e.cool <= 0){
+
+                    if(e.targetD < 115 * 115){
+
+                        e.mode = "whip";
+                        e.modeT = 0.45;
+
+                    }
+                    else{
+
+                        for(let i = -2; i <= 2; i++)
+                            enemyBullet(state, e, e.angle + i * 14 * DEG, def.bullet, {r: 5, color: TINT.violet});
+
+                        e.cool = 1.4;
+
+                    }
+
+                }
+
+                if(e.modeT <= 0 || e.targetD > 300 * 300){
+
+                    e.mode = "sink";
+                    e.modeT = 0.4;
+
+                }
+
+                return;
+
+            case "whip":
+
+                e.modeT -= dt;
+
+                if(e.modeT > 0)
+                    return;
+
+                // everything in a wide arc in front of it
+                for(const p of state.players){
+
+                    if(!p.dead && Math.hypot(p.x - e.x, p.y - e.y) < 110 + p.r && Math.abs(angleDiff(e.angle, angleTo(e, p))) < 65 * DEG)
+                        damagePlayer(state, p, 1);
+
+                }
+
+                emit(state, "whip", {x: e.x, y: e.y, angle: e.angle, r: 110, color: e.color});
+
+                e.mode = "up";
+                e.cool = 1.1;
+
+                return;
+
+            case "sink":
+
+                e.modeT -= dt;
+
+                if(e.modeT <= 0){
+
+                    e.mode = "under";
+                    e.hidden = true;
+
+                    emit(state, "rumble", {x: e.x, y: e.y, r: e.r});
+
+                }
+
+                return;
+
+            default:
+
+                e.mode = "under";
+
+        }
+
+    },
+
+
+    /* ---- Furnace ---- */
+
+    // scampers at you leaving a trail of fire, and bursts into flame when killed
+    ember(state, e, target, dt, slow){
+
+        e.cool -= dt;
+
+        if(e.cool <= 0 && !e.asleep){
+
+            e.cool = 0.42;
+
+            addZone(state, "fire", e.x, e.y, 16, 2.4);
+
+        }
+
+        seek(state, e, target, e.speed * slow, dt, Math.sin(e.t * 9 + e.id) * 0.5);
+
+    },
+
+
+    // keeps its distance and lobs fireballs where you stand; they leave
+    // the ground burning
+    lobber(state, e, target, dt, slow){
+
+        const def = ENEMIES[e.type];
+        const rng = state.rng;
+
+        e.fireT -= dt;
+
+        if(!e.sees){
+
+            e.mode = "move";
+
+            seek(state, e, target, e.speed * slow, dt);
+
+            return;
+
+        }
+
+        if(e.fireT <= 0){
+
+            if(!windUp(e, dt, 0.45))
+                return;
+
+            const count = e.elite || state.floor >= 11 ? 2 : 1;
+
+            for(let i = 0; i < count; i++){
+
+                const spread = i ? 70 : 24;
+
+                state.strikes.push({
+                    id: newId(state), team: "e", look: "fire",
+                    x: target.x + rng.range(-spread, spread), y: target.y + rng.range(-spread, spread),
+                    r: 34, delay: 1, total: 1, dmg: 1, dead: false,
+                    from: {x: e.x, y: e.y},
+                    zone: {kind: "fire", r: 32, life: 3}
+                });
+
+            }
+
+            emit(state, "lob", {x: e.x, y: e.y, color: e.color});
+
+            e.fireT = def.fire * (e.elite ? 0.75 : 1) * rng.range(0.85, 1.15);
+
+            return;
+
+        }
+
+        keepAway(state, e, target, dt, e.speed * slow, 190, 300);
+
     }
 
 };
+
+
+// backs off when you are close, closes in when far, circles in between
+function keepAway(state, e, target, dt, speed, close, far){
+
+    if(state.tick % 96 === e.id % 96)
+        e.side = -e.side;
+
+    const d = Math.sqrt(e.targetD);
+    const toward = angleTo(e, target);
+    const angle = d < close ? toward + Math.PI : d > far ? toward : toward + e.side * Math.PI / 2;
+
+    if(walk(state, e, angle, speed, dt))
+        e.side = -e.side;
+
+}
+
+
+// vanish now, appear between minR and maxR from the target soon after
+function blinkTo(state, e, target, minR, maxR, next){
+
+    e.mode = "blink";
+    e.modeT = 0.25;
+    e.hidden = true;
+    e.next = next;
+    e.blinkTo = spotNear(state.rng, state.map, target.x, target.y, minR, maxR);
+
+    emit(state, "blink", {x: e.x, y: e.y, color: e.color});
+
+}
+
+
+// how many of its summons are still up
+const minions = (state, e) =>
+    state.enemies.reduce((n, other) => n + (other.owner === e.id && !other.dead ? 1 : 0), 0);
 
 
 // dummies sway back to their spot (and some strafe side to side)

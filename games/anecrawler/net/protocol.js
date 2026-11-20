@@ -37,7 +37,12 @@ const KEEP = 40;                                // snapshots remembered
 const SLIDE_LIMIT = 160;                        // anything moving further between snapshots jumps there
 
 const TYPES = [...Object.keys(ENEMIES), ...BOSSES.map(b => b.id), "dummy"];
-const MODES = ["move", "aim", "wind", "charge", "stun", "fuse", "blink", "swoop"];
+const MODES = [
+    "move", "aim", "wind", "charge", "stun", "fuse", "blink", "swoop",
+    "bones", "fade", "lunge", "raise", "puff", "focus", "beam", "under", "rise", "up", "whip", "sink"
+];
+const ZONE_KINDS = ["fire", "spore"];
+const STRIKE_LOOKS = [undefined, "fire", "bone", "meteor", "slam"];     // enemy strikes, by -1 - index
 const PICKUPS = ["energy", "shard", "heart"];
 const WEAPON_IDS = WEAPONS.map(w => w.id);
 
@@ -54,13 +59,30 @@ const SHOWN_HERE = new Set(["shot", "swing", "rail", "shock", "dash"]);
 // events that must reach everyone, wherever they are standing
 const GLOBAL = new Set([
     "crate", "floor", "lobby", "runStart", "runEnd", "join", "leave",
-    "boss", "bossDown", "bossReset", "loot", "lootDone", "down", "revive", "pickup", "empty"
+    "boss", "bossDown", "bossReset", "loot", "lootDone", "down", "revive", "pickup", "empty", "unsealed"
 ]);
 
 const round = value => Math.round(value);
 
 
 /* ---------------- Host side ---------------- */
+
+// [weapon index (players) or -1 - look (enemies), x, y, r, delay, total, (from x, from y)]
+function encodeStrike(s){
+
+    const row = [
+        s.team === "p" ? WEAPON_IDS.indexOf(s.weapon) : -1 - Math.max(0, STRIKE_LOOKS.indexOf(s.look)),
+        round(s.x), round(s.y), s.r, round(s.delay * 100), round(s.total * 100)
+    ];
+
+    if(s.from)
+        row.push(round(s.from.x), round(s.from.y));
+
+    return row;
+
+}
+
+
 
 // the world as player `pid` needs to see it right now
 export function encode(state, pid){
@@ -152,10 +174,11 @@ export function encode(state, pid){
         P: state.players.map(encodePlayer),
         E,
         B,
-        S: state.strikes.filter(s => close(s)).map(s => [s.team === "p" ? WEAPON_IDS.indexOf(s.weapon) : -1, round(s.x), round(s.y), s.r, round(s.delay * 100), round(s.total * 100)]),
-        L: state.lasers.map(l => [round(l.x), round(l.y), round(l.angle * 1000), round(l.length), l.warn > 0 ? 1 : 0]),
+        S: state.strikes.filter(s => close(s)).map(encodeStrike),
+        L: state.lasers.map(l => [round(l.x), round(l.y), round(l.angle * 1000), round(l.length), l.warn > 0 ? 1 : 0, l.tint ?? 2, l.width ?? 7]),
+        Z: state.zones.filter(z => close(z)).map(z => [ZONE_KINDS.indexOf(z.kind), round(z.x), round(z.y), round(z.r), round(z.life / z.max * 100)]),
         I: state.pickups.filter(pk => close(pk, 700)).map(pk => [pk.id, PICKUPS.indexOf(pk.kind), round(pk.x), round(pk.y)]),
-        O: state.props.map(prop => ({id: prop.id, kind: prop.kind, x: prop.x, y: prop.y, target: prop.target, source: prop.source, floor: prop.floor, opened: prop.opened}))
+        O: state.props.map(prop => ({id: prop.id, kind: prop.kind, x: prop.x, y: prop.y, target: prop.target, source: prop.source, floor: prop.floor, opened: prop.opened, locked: prop.locked || undefined}))
     };
 
 }
@@ -185,6 +208,7 @@ function encodePlayer(p){
         swing: p.swing,
         dead: p.dead,
         revive: round(p.revive * 10) / 10,
+        reviving: p.reviving ?? undefined,
         loot: Boolean(p.loot),
         near: p.near,
         kills: p.kills,
@@ -231,6 +255,7 @@ export function createMirror(seed){
         bullets: [],
         strikes: [],
         lasers: [],
+        zones: [],
         pickups: [],
         props: [],
         vote: null
@@ -248,7 +273,7 @@ export function createMirror(seed){
 
     // our own character, shown ahead (predict.js)
     const own = createPredictor();
-    const at = {map: null, mine: null, lobby: true, enemies: null};
+    const at = {map: null, mine: null, lobby: true, enemies: null, zones: null};
 
     let hostBullets = [];               // everyone else's bullets, from the host
     const drawn = [];                   // ...plus our own, as drawn
@@ -261,6 +286,7 @@ export function createMirror(seed){
         at.mine = state.players.find(p => p.id === me) ?? null;
         at.lobby = state.mode === "lobby";
         at.enemies = state.enemies;
+        at.zones = state.zones;
 
         return at;
 
@@ -320,8 +346,13 @@ export function createMirror(seed){
         state.players = snap.P.map(p => ({...p, r: PLAYER.radius, hostBeam: p.beam}));
         state.enemies = snap.E.map(decodeEnemy);
         state.pickups = snap.I.map(([id, kind, x, y]) => ({id, kind: PICKUPS[kind], x, y}));
-        state.strikes = snap.S.map(([w, x, y, r, delay, total]) => ({team: w < 0 ? "e" : "p", weapon: WEAPON_IDS[w], x, y, r, delay: delay / 100, start: delay / 100, total: total / 100, k: snap.k}));
-        state.lasers = snap.L.map(([x, y, angle, length, warn]) => ({x, y, angle: angle / 1000, length, warn}));
+        state.strikes = snap.S.map(([w, x, y, r, delay, total, fx, fy]) => ({
+            team: w < 0 ? "e" : "p", weapon: WEAPON_IDS[w], look: w < 0 ? STRIKE_LOOKS[-1 - w] : undefined,
+            x, y, r, delay: delay / 100, start: delay / 100, total: total / 100, k: snap.k,
+            from: fx === undefined ? null : {x: fx, y: fy}
+        }));
+        state.lasers = snap.L.map(([x, y, angle, length, warn, tint, width]) => ({x, y, angle: angle / 1000, length, warn, tint, width}));
+        state.zones = (snap.Z ?? []).map(([kind, x, y, r, life]) => ({kind: ZONE_KINDS[kind], x, y, r, life: life / 100, max: 1}));
         // (props only come when they change, see host.js)
         if(snap.O)
             state.props = snap.O.map(prop => ({...prop, opened: prop.opened ?? []}));

@@ -1,5 +1,14 @@
 import {TILE} from "../sim/data.js";
-import {FLOOR, CRATE} from "../sim/map.js";
+import {FLOOR, CRATE, WALL, WATER, CHASM, LAVA, VOID} from "../sim/map.js";
+
+// minimap colours per tile
+const MINIMAP = {[FLOOR]: "#4b4b52", [CRATE]: "#6b5d4f", [WATER]: "#2f6f78", [CHASM]: "#120c1c", [LAVA]: "#c2410c"};
+
+// ground you could walk on but have not seen yet, next to ground you have:
+// the edges of the explored cave, where there is more to find
+export const FRONTIER = "#3a3a48";
+
+const walkish = tile => tile === FLOOR || tile === CRATE || tile === WATER;
 
 
 // What this player has explored. A tile is "seen" once it has ever been in
@@ -21,6 +30,7 @@ export function createFog(){
     let stamp = 0;
     let lastTile = -1;
     let lastBroken = 0;
+    let box = null;                     // the explored area, in tiles: {x0, y0, x1, y1}
 
 
     // a new floor: forget everything (the lobby is known from the start)
@@ -32,6 +42,7 @@ export function createFog(){
         stamp = 1;
         lastTile = -1;
         lastBroken = 0;
+        box = null;
 
         mini.width = map.w;
         mini.height = map.h;
@@ -56,9 +67,43 @@ export function createFog(){
         seen[i] = 1;
 
         const tile = map.tiles[i];
+        const x = i % map.w;
+        const y = (i - x) / map.w;
 
-        mctx.fillStyle = tile === FLOOR ? "#4b4b52" : tile === CRATE ? "#6b5d4f" : "#1f1f23";
-        mctx.fillRect(i % map.w, Math.floor(i / map.w), 1, 1);
+        mctx.fillStyle = MINIMAP[tile] ?? "#1f1f23";
+        mctx.fillRect(x, y, 1, 1);
+
+        if(!box)
+            box = {x0: x, y0: y, x1: x, y1: y};
+        else{
+
+            box.x0 = Math.min(box.x0, x);
+            box.y0 = Math.min(box.y0, y);
+            box.x1 = Math.max(box.x1, x);
+            box.y1 = Math.max(box.y1, y);
+
+        }
+
+        // the unseen ground around it is the edge of what you know
+        if(tile === WALL || tile === VOID)
+            return;
+
+        mctx.fillStyle = FRONTIER;
+
+        for(let dy = -1; dy <= 1; dy++){
+
+            for(let dx = -1; dx <= 1; dx++){
+
+                const nx = x + dx;
+                const ny = y + dy;
+                const n = ny * map.w + nx;
+
+                if(nx >= 0 && ny >= 0 && nx < map.w && ny < map.h && !seen[n] && walkish(map.tiles[n]))
+                    mctx.fillRect(nx, ny, 1, 1);
+
+            }
+
+        }
 
     }
 
@@ -134,7 +179,8 @@ export function createFog(){
 
             reveal(i);
 
-            if(map.tiles[i] !== FLOOR && map.tiles[i] !== CRATE)
+            // sight crosses everything but rock (water, chasms, lava, crates)
+            if(map.tiles[i] === WALL || map.tiles[i] === VOID)
                 return;
 
             if(x === x1 && y === y1)
@@ -167,6 +213,34 @@ export function createFog(){
         seen: i => seen[i] === 1,
         visible: i => lit[i] === stamp,
 
+        // unseen ground you could walk to, right next to ground you have seen
+        frontier(i){
+
+            if(seen[i] || !walkish(map.tiles[i]))
+                return false;
+
+            const x = i % map.w;
+            const y = (i - x) / map.w;
+
+            for(let dy = -1; dy <= 1; dy++){
+
+                for(let dx = -1; dx <= 1; dx++){
+
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    const n = ny * map.w + nx;
+
+                    if(nx >= 0 && ny >= 0 && nx < map.w && ny < map.h && seen[n] && map.tiles[n] !== WALL && map.tiles[n] !== VOID)
+                        return true;
+
+                }
+
+            }
+
+            return false;
+
+        },
+
         // is the tile under a world point in view right now?
         sees(x, y){
 
@@ -182,6 +256,9 @@ export function createFog(){
             return seen[Math.floor(y / TILE) * map.w + Math.floor(x / TILE)] === 1;
 
         },
+
+        // the explored area in tiles, or null before anything is seen
+        bounds: () => box,
 
         get map(){ return map; },
         get mini(){ return mini; }

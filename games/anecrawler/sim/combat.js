@@ -1,9 +1,10 @@
 import {TILE} from "./data.js";
-import {solidAt, tileAt, CRATE} from "./map.js";
+import {blocksAt, tileAt, CRATE} from "./map.js";
 import {weaponStats} from "./loot.js";
 import {near} from "./grid.js";
 import {DEG, angleDiff, castRay, segmentDistance, clamp} from "./physics.js";
 import {hash01} from "./rng.js";
+import {addZone} from "./ground.js";
 import {
     emit, newId, isActive, nearestEnemy,
     damageEnemy, damagePlayer, explode, smashCrate
@@ -648,7 +649,7 @@ function hitWall(state, b, ox, oy){
     const tx = Math.floor(b.x / TILE);
     const ty = Math.floor(b.y / TILE);
 
-    if(!solidAt(state.map, tx, ty))
+    if(!blocksAt(state.map, tx, ty))
         return false;
 
     if(tileAt(state.map, tx, ty) === CRATE)
@@ -659,8 +660,8 @@ function hitWall(state, b, ox, oy){
     if(b.bounce > 0){
 
         // flip whichever direction crossed into the wall
-        const flipX = solidAt(state.map, tx, Math.floor(oy / TILE));
-        const flipY = solidAt(state.map, Math.floor(ox / TILE), ty);
+        const flipX = blocksAt(state.map, tx, Math.floor(oy / TILE));
+        const flipY = blocksAt(state.map, Math.floor(ox / TILE), ty);
 
         if(flipX || !flipY)
             b.vx = -b.vx;
@@ -883,7 +884,11 @@ export function updateStrikes(state, dt){
         if(s.team === "p")
             explode(state, s.x, s.y, s.r, s.dmg, {pid: s.pid, crit: s.crit});
         else
-            explode(state, s.x, s.y, s.r, 0, {team: "e", playerDmg: s.dmg});
+            explode(state, s.x, s.y, s.r, 0, {team: "e", playerDmg: s.dmg, look: s.look});
+
+        // a fireball leaves the ground burning
+        if(s.zone)
+            addZone(state, s.zone.kind, s.x, s.y, s.zone.r, s.zone.life);
 
     }
 
@@ -931,11 +936,11 @@ export function updateLasers(state, dt){
 
         l.x = owner.x;
         l.y = owner.y;
-        l.length = castRay(state.map, l.x, l.y, l.angle, 900).length;
+        l.length = castRay(state.map, l.x, l.y, l.angle, l.reach ?? 900).length;
 
         for(const p of state.players){
 
-            if(!p.dead && segmentDistance(l.x, l.y, l.angle, l.length, p).distance < 7 + p.r * 0.6)
+            if(!p.dead && segmentDistance(l.x, l.y, l.angle, l.length, p).distance < (l.width ?? 7) + p.r * 0.6)
                 damagePlayer(state, p, 1);
 
         }
