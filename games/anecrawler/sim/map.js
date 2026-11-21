@@ -79,9 +79,6 @@ export const blocksAt = (map, tx, ty) =>
 export const wetAt = (map, x, y) =>
     tileAt(map, Math.floor(x / TILE), Math.floor(y / TILE)) === WATER;
 
-export const solidAtPoint = (map, x, y) =>
-    solidAt(map, Math.floor(x / TILE), Math.floor(y / TILE));
-
 export const tileCentre = (tx, ty) => ({
     x: (tx + 0.5) * TILE,
     y: (ty + 0.5) * TILE

@@ -75,7 +75,9 @@ function shadesOf(palette){
 // size, handle() for each batch of events, draw() per frame.
 export function createRenderer(canvas){
 
-    const ctx = canvas.getContext("2d");
+    // (every frame paints the whole canvas, so it needs no see-through:
+    // the browser can skip blending it with the page)
+    const ctx = canvas.getContext("2d", {alpha: false});
     const effects = createEffects();
     const fx = effects.fx;
     const fog = createFog();
@@ -1073,6 +1075,7 @@ export function createRenderer(canvas){
         resize, toWorld, handle, draw,
         banner: effects.banner,
         speed: () => fx.speed(),
+        setShake: k => fx.setShake(k),
         toggleMap: hud.toggleMap,
         closeMap: hud.closeMap,
         mapOpen: hud.mapOpen

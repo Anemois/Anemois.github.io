@@ -87,15 +87,6 @@ export function updateNav(state){
 
 
 // steps from this point to the nearest player, or Infinity if out of reach
-export function navDistance(state, x, y){
-
-    const d = state.nav.dist[Math.floor(y / TILE) * state.map.w + Math.floor(x / TILE)];
-
-    return d === FAR ? Infinity : d;
-
-}
-
-
 // The direction (radians) to walk from (x, y) to get closer to a player,
 // or null when there is no known way. Diagonal steps never cut a corner.
 export function navAngle(state, x, y){

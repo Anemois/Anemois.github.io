@@ -316,7 +316,8 @@ const PATTERNS = {
     },
 
 
-    // walls of bullets with one gap to slip through
+    // walls of arrows with one gap to slip through (a blade cannot cut a
+    // way through them)
     walls(state, e, target, dt, P){
 
         P.fire -= dt;
@@ -338,7 +339,7 @@ const PATTERNS = {
 
                 const offset = (i - (size - 1) / 2) * 28;
 
-                enemyBullet(state, e, angle, 130, {from: {x: e.x + Math.cos(across) * offset, y: e.y + Math.sin(across) * offset}});
+                enemyBullet(state, e, angle, 130, {arrow: true, r: 4, color: TINT.bone, from: {x: e.x + Math.cos(across) * offset, y: e.y + Math.sin(across) * offset}});
 
             }
 
@@ -416,9 +417,10 @@ const PATTERNS = {
 
         if(P.fire <= 0){
 
-            P.fire = e.enraged ? 0.05 : 0.07;
+            P.fire = e.enraged ? 0.07 : 0.09;
 
-            enemyBullet(state, e, angleTo(e, target) + state.rng.range(-0.45, 0.45), state.rng.range(170, 230), {r: 4});
+            // stingers (arrows): a spray to dodge, not to swat
+            enemyBullet(state, e, angleTo(e, target) + state.rng.range(-0.45, 0.45), state.rng.range(170, 230), {arrow: true, r: 3, color: TINT.violet});
 
         }
 

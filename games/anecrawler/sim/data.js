@@ -127,7 +127,7 @@ export const RARITY = Object.fromEntries(RARITIES.map((r, i) => [r.id, {...r, ti
 export const WEAPONS = [
 
     // common
-    {id: "pistol", name: "Pistol", rarity: "common", kind: "gun",
+    {id: "pistol", name: "Pistol", rarity: "common", kind: "gun", casing: true,
      dmg: 4, rate: 4, energy: 0, spread: 4, speed: 540, size: 4, life: 1.2, crit: 0.05,
      shape: [["rect", 0, -3, 15, 5, "body"], ["rect", 1, 1, 5, 7, "dark"], ["rect", 11, -3, 4, 2, "accent"]]},
 
@@ -135,12 +135,12 @@ export const WEAPONS = [
      dmg: 7, rate: 2.6, energy: 0, range: 54, arc: 110, crit: 0.05,
      shape: [["rect", -2, -1.5, 8, 3, "dark"], ["rect", 6, -5, 2, 10, "accent"], ["poly", [[8, -2.5], [30, -1.5], [34, 0], [30, 1.5], [8, 2.5]], "body"]]},
 
-    {id: "shotgun", name: "Old Shotgun", rarity: "common", kind: "gun",
+    {id: "shotgun", name: "Old Shotgun", rarity: "common", kind: "gun", casing: true,
      dmg: 2.6, rate: 1.5, energy: 2, count: 5, spread: 28, speed: 480, size: 3.5, life: 0.5, crit: 0.05,
      shape: [["rect", 0, -3, 24, 5, "body"], ["rect", -4, -2, 6, 6, "dark"], ["rect", 18, -4, 6, 2, "accent"]]},
 
     // uncommon
-    {id: "smg", name: "SMG", rarity: "uncommon", kind: "gun",
+    {id: "smg", name: "SMG", rarity: "uncommon", kind: "gun", casing: true,
      dmg: 2.6, rate: 9, energy: 0.5, spread: 11, speed: 560, size: 3, life: 0.9, crit: 0.05,
      shape: [["rect", 0, -3, 18, 5, "body"], ["rect", 5, 2, 3, 8, "dark"], ["rect", 1, 1, 3, 5, "dark"], ["rect", 14, -4, 4, 2, "accent"]]},
 
@@ -153,7 +153,7 @@ export const WEAPONS = [
      shape: [["rect", -6, -1.5, 34, 3, "dark"], ["poly", [[28, -4], [42, 0], [28, 4]], "accent"]]},
 
     // rare
-    {id: "rifle", name: "Assault Rifle", rarity: "rare", kind: "gun",
+    {id: "rifle", name: "Assault Rifle", rarity: "rare", kind: "gun", casing: true,
      dmg: 4.2, rate: 2.6, energy: 1, burst: 3, burstGap: 0.07, spread: 5, speed: 620, size: 3.5, life: 1.1, crit: 0.07,
      shape: [["rect", 0, -3, 26, 5, "body"], ["rect", -5, -2, 6, 6, "dark"], ["rect", 7, 2, 3, 7, "dark"], ["rect", 20, -4.5, 6, 2, "accent"]]},
 
@@ -210,7 +210,93 @@ export const WEAPONS = [
 
     {id: "excalibur", name: "Excalibur", rarity: "mythic", kind: "melee",
      dmg: 30, rate: 2.2, energy: 2, range: 70, arc: 130, wave: true, crit: 0.12,
-     shape: [["rect", -3, -2, 9, 4, "dark"], ["rect", 6, -7, 3, 14, "accent"], ["poly", [[9, -3], [40, -2], [45, 0], [40, 2], [9, 3]], "#ffffff"]]}
+     shape: [["rect", -3, -2, 9, 4, "dark"], ["rect", 6, -7, 3, 14, "accent"], ["poly", [[9, -3], [40, -2], [45, 0], [40, 2], [9, 3]], "#ffffff"]]},
+
+    // ---- the second armoury (added later: kept after the first so the
+    // ids that travel between players keep their numbers). `look` is how
+    // the shots are drawn (actors.js).
+    //   returns    flies out `range`, comes back to the thrower (flight.js)
+    //   lob        thrown in an arc to the cursor, up to `range`
+    //   zone       ground it leaves: {kind (data ZONES), r, life, dps (share of dmg per second)}
+    //   split      breaks where it hits: {count, dmg (share), speed, life, size, fan, homing, explode}
+    //   spin       winds up over this many seconds of holding fire
+    //   zap        lightning jumps on to this many more enemies
+    //   chill      cold per hit; enough freezes an enemy solid
+    //   poison     stacking poison, this share of the hit per second per dose
+    //   stagger    a melee blow leaves enemies reeling this long
+    //   leech      energy back per enemy a swing hits
+    //   reflect    a swing sends enemy orbs back as your shots (share of dmg)
+    //   storm      charged: lightning bolts on this many enemies by the cursor
+
+    // common
+    {id: "knives", name: "Throwing Knives", rarity: "common", kind: "gun", look: "knife",
+     dmg: 3.2, rate: 2.4, energy: 0, count: 3, spread: 18, speed: 560, size: 3, life: 0.42, crit: 0.15,
+     shape: [["rect", -2, -1.5, 5, 3, "dark"], ["poly", [[3, -2], [18, -1], [21, 0], [18, 1], [3, 2]], "body"], ["poly", [[2, -4], [14, -9], [16, -8], [4, -2]], "body"], ["poly", [[2, 4], [14, 9], [16, 8], [4, 2]], "body"], ["rect", 1, -2, 2, 4, "accent"]]},
+
+    {id: "crossbow", name: "Crossbow", rarity: "common", kind: "gun", look: "bolt",
+     dmg: 11, rate: 1.3, energy: 0, speed: 760, size: 3, life: 1, pierce: 1, crit: 0.1,
+     shape: [["rect", -4, -2, 22, 4, "dark"], ["poly", [[13, -12], [17, -11], [18, 0], [17, 11], [13, 12], [15, 0]], "body"], ["rect", 14, -11, 1, 22, "accent"], ["rect", 6, -1, 16, 2, "accent"]]},
+
+    {id: "club", name: "Spiked Club", rarity: "common", kind: "melee",
+     dmg: 11, rate: 1.5, energy: 0, range: 50, arc: 100, stagger: 0.6, crit: 0.04,
+     shape: [["rect", -6, -2, 16, 4, "dark"], ["poly", [[10, -3], [30, -7], [34, 0], [30, 7], [10, 3]], "body"], ["circle", 30, -4, 1.6, "accent"], ["circle", 25, 3, 1.6, "accent"], ["circle", 20, -2, 1.4, "accent"]]},
+
+    // uncommon
+    {id: "boomerang", name: "Boomerang", rarity: "uncommon", kind: "gun", look: "boomerang",
+     dmg: 7, rate: 1.5, energy: 0, speed: 430, size: 8, life: 4, range: 230, returns: true, crit: 0.06,
+     shape: [["poly", [[0, -2], [10, -12], [14, -10], [6, 0], [14, 10], [10, 12], [0, 2]], "body"], ["poly", [[10, -12], [14, -10], [12, -8]], "accent"], ["poly", [[10, 12], [14, 10], [12, 8]], "accent"]]},
+
+    {id: "flask", name: "Acid Flask", rarity: "uncommon", kind: "gun", look: "flask", color: "#a3e635",
+     dmg: 7, rate: 1.1, energy: 2, speed: 360, range: 300, size: 5, explode: 36, lob: true,
+     zone: {kind: "acid", r: 48, life: 3.5, dps: 0.9}, crit: 0.04,
+     shape: [["rect", 2, -2, 6, 4, "dark"], ["circle", 14, 0, 7, "body"], ["circle", 14, 1, 5, "#a3e635"], ["rect", 0, -3, 3, 6, "accent"]]},
+
+    {id: "arcpistol", name: "Arc Pistol", rarity: "uncommon", kind: "gun", look: "spark", color: "#67e8f9",
+     dmg: 3, rate: 4.5, energy: 0.6, spread: 4, speed: 620, size: 3, life: 1, zap: 2, crit: 0.05,
+     shape: [["rect", 0, -3, 14, 6, "body"], ["rect", 1, 2, 5, 7, "dark"], ["circle", 16, 0, 3, "accent"], ["rect", 4, -5, 2, 2, "accent"], ["rect", 8, -5, 2, 2, "accent"]]},
+
+    // rare
+    {id: "minigun", name: "Rotary Gun", rarity: "rare", kind: "gun", casing: true,
+     dmg: 2.5, rate: 16, spin: 1.3, energy: 0.3, spread: 9, speed: 660, size: 3, life: 0.8, crit: 0.04,
+     shape: [["rect", -2, -5, 12, 10, "dark"], ["rect", 10, -4, 20, 2, "body"], ["rect", 10, -1, 20, 2, "body"], ["rect", 10, 2, 20, 2, "body"], ["rect", 28, -5, 3, 10, "accent"], ["rect", 2, 5, 4, 6, "dark"]]},
+
+    {id: "splinter", name: "Splinter Gun", rarity: "rare", kind: "gun",
+     dmg: 13, rate: 1.4, energy: 2, speed: 440, size: 6, life: 0.9, crit: 0.06,
+     split: {count: 6, dmg: 0.4, speed: 420, life: 0.32, size: 3, fan: 1.5},
+     shape: [["rect", 0, -4, 22, 8, "body"], ["poly", [[22, -5], [28, -2], [28, 2], [22, 5]], "accent"], ["rect", 3, 3, 4, 7, "dark"], ["rect", 8, -6, 8, 2, "dark"]]},
+
+    {id: "mirror", name: "Mirror Blade", rarity: "rare", kind: "melee",
+     dmg: 9, rate: 2.4, energy: 0, range: 56, arc: 140, reflect: 1.2, crit: 0.1,
+     shape: [["rect", -3, -1.5, 8, 3, "dark"], ["rect", 5, -6, 2, 12, "accent"], ["poly", [[7, -3], [32, -3], [38, 0], [32, 3], [7, 3]], "#e0f2fe"], ["poly", [[9, -1], [30, -1], [34, 0], [30, 1], [9, 1]], "accent"]]},
+
+    // epic
+    {id: "mortar", name: "Mortar", rarity: "epic", kind: "gun", look: "shell",
+     dmg: 30, rate: 0.75, energy: 4, speed: 330, range: 420, size: 7, explode: 72, lob: true,
+     zone: {kind: "blaze", r: 58, life: 3, dps: 0.35}, crit: 0.05,
+     shape: [["rect", 0, -6, 18, 12, "dark"], ["rect", 16, -7, 5, 14, "body"], ["circle", 6, 0, 3, "accent"], ["rect", -4, -3, 5, 6, "body"]]},
+
+    {id: "scythe", name: "Reaper's Scythe", rarity: "epic", kind: "melee",
+     dmg: 17, rate: 1.5, energy: 0, range: 78, arc: 300, leech: 1.5, crit: 0.1,
+     shape: [["rect", -8, -1.5, 40, 3, "dark"], ["poly", [[30, -1], [34, -1], [31, -19], [17, -24], [26, -15]], "body"], ["poly", [[30, -3], [32, -3], [29, -17], [24, -19]], "accent"]]},
+
+    {id: "glacier", name: "Glacier Staff", rarity: "epic", kind: "gun", look: "ice", color: "#bae6fd",
+     dmg: 10.5, rate: 2.6, energy: 2, speed: 400, size: 6, life: 1.1, chill: 1, pierce: 1, crit: 0.06,
+     shape: [["rect", -6, -1.5, 30, 3, "dark"], ["poly", [[23, 0], [28, -9], [33, 0], [28, 9]], "#bae6fd"], ["poly", [[25, 0], [28, -4], [31, 0], [28, 4]], "accent"]]},
+
+    // legendary
+    {id: "storm", name: "Storm Caller", rarity: "legendary", kind: "charge", color: "#67e8f9",
+     dmg: 34, rate: 1, energy: 5, charge: 0.7, minCharge: 0.3, storm: 3, crit: 0.1,
+     shape: [["rect", -6, -1.5, 28, 3, "dark"], ["poly", [[22, -9], [31, -2], [26, -1], [33, 9], [21, 1], [26, 0]], "accent"]]},
+
+    {id: "hydra", name: "Hydra", rarity: "legendary", kind: "gun", look: "rocket",
+     dmg: 18, rate: 1.2, energy: 4, speed: 380, size: 5, life: 1.3, explode: 40, crit: 0.06,
+     split: {count: 3, dmg: 0.5, speed: 300, life: 1.4, size: 3.5, homing: 6, explode: 28, fan: 2.2},
+     shape: [["rect", 0, -5, 22, 10, "body"], ["rect", 22, -6, 4, 3, "accent"], ["rect", 22, -1.5, 4, 3, "accent"], ["rect", 22, 3, 4, 3, "accent"], ["rect", 4, 4, 4, 7, "dark"]]},
+
+    // mythic
+    {id: "hive", name: "Hive Staff", rarity: "mythic", kind: "gun", look: "bee", color: "#fde047",
+     dmg: 5, rate: 3, energy: 2, count: 3, spread: 60, speed: 270, size: 3.5, life: 2.4, homing: 6, poison: 0.6, crit: 0.06,
+     shape: [["rect", -6, -1.5, 26, 3, "dark"], ["circle", 25, 0, 7, "#fde047"], ["rect", 22, -6, 2, 12, "#3f3f46"], ["rect", 26, -6, 2, 12, "#3f3f46"], ["circle", 25, 0, 2, "accent"]]}
 
 ];
 
@@ -300,7 +386,12 @@ export const BOSS = Object.fromEntries(BOSSES.map(b => [b.id, b]));
 // burning ground and spore clouds left by attacks (see world.js addZone)
 export const ZONES = {
     fire:  {hurt: 1, every: 0.6, colour: "#ff8a3d"},
-    spore: {hurt: 1, every: 1.4, slow: 0.6, colour: "#d58cf0"}
+    spore: {hurt: 1, every: 1.4, slow: 0.6, colour: "#d58cf0"},
+
+    // the players' own (team "p"): they hurt enemies, by the dps they carry;
+    // slow here is how much enemies in it are slowed
+    acid:  {team: "p", every: 0.4, slow: 0.45, hit: "poison", colour: "#a3e635"},
+    blaze: {team: "p", every: 0.3, hit: "burn", colour: "#ff8a3d"}
 };
 
 

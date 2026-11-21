@@ -25,38 +25,9 @@ export const newId = state =>
     state.nextId++;
 
 
-export const alivePlayers = state =>
-    state.players.filter(p => !p.dead);
-
 // enemies that can be hit (not still appearing, not out of reach)
 export const isActive = e =>
     !e.dead && e.spawn <= 0 && !e.hidden;
-
-
-export function nearestPlayer(state, from){
-
-    let best = null;
-    let bestD = Infinity;
-
-    for(const p of state.players){
-
-        if(p.dead)
-            continue;
-
-        const d = (p.x - from.x) ** 2 + (p.y - from.y) ** 2;
-
-        if(d < bestD){
-
-            best = p;
-            bestD = d;
-
-        }
-
-    }
-
-    return best;
-
-}
 
 
 // the closest hittable enemy within range; `skip` is a list of ids to pass over
@@ -433,8 +404,10 @@ export function smashCrate(state, tx, ty, hits = 1){
 
 /* ---------------- Enemy bullets ---------------- */
 
-// `from` fires from another point than the enemy (bullet walls)
-export function enemyBullet(state, e, angle, speed, {r = 5, dmg = 1, life = 5, homing = 0, color = 0, from = null} = {}){
+// `from` fires from another point than the enemy (bullet walls). An arrow
+// is a thin, straight shot that a melee swing cannot knock away (orbs it
+// can): the only answers are to step aside or dash through it.
+export function enemyBullet(state, e, angle, speed, {r = 5, dmg = 1, life = 5, homing = 0, color = 0, from = null, arrow = false} = {}){
 
     const scale = Math.min(1.4, 1 + (state.floor - 1) * 0.02);
     const start = from ?? {x: e.x + Math.cos(angle) * e.r * 0.8, y: e.y + Math.sin(angle) * e.r * 0.8};
@@ -456,7 +429,8 @@ export function enemyBullet(state, e, angle, speed, {r = 5, dmg = 1, life = 5, h
         hits: null,
         age: 0,
         dead: false,
-        tint: color
+        tint: color,
+        kind: arrow ? "arrow" : null
     });
 
 }

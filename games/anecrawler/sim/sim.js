@@ -146,6 +146,8 @@ export function addPlayer(state, {id, name = "Player", loadout = []}){
         weapons: [],
         slot: 0,
         reload: 0,
+        spin: 0,                // how wound up a spinning gun is, 0..1
+        cool: [0, 0],           // cooldown left on the weapon put away, per slot
         burst: 0,
         burstT: 0,
         charge: -1,
@@ -206,6 +208,31 @@ export function resetHands(p){
 
     p.slot = Math.max(0, Math.min(p.slot, p.weapons.length - 1));
     p.reload = 0;
+    p.spin = 0;
+    p.cool = [0, 0];
+    p.burst = 0;
+    p.charge = -1;
+    p.beam = null;
+    p.swing = null;
+
+}
+
+
+// Takes the other weapon out. Its cooldown carries on from where it was
+// (it kept cooling while put away), and the one put away keeps its own:
+// swapping back and forth never fires a weapon sooner. A burst, a charge
+// or a swing in progress is dropped.
+export function switchSlot(p, slot){
+
+    if(slot === p.slot)
+        return;
+
+    p.cool ??= [0, 0];
+    p.cool[p.slot] = Math.max(0, p.reload);
+    p.slot = slot;
+    p.reload = p.cool[slot];
+    p.cool[slot] = 0;
+    p.spin = 0;
     p.burst = 0;
     p.charge = -1;
     p.beam = null;
@@ -297,15 +324,15 @@ function updatePlayer(state, p, intent, dt, moves = [intent]){
     for(const m of moves){
 
         p.aim = Math.atan2(m.aimY - p.y, m.aimX - p.x);
+        p.aimX = m.aimX;
+        p.aimY = m.aimY;
 
         if(movePlayer(state.map, p, m, dt, m.dash && !p.held.dash, state.zones))
             emit(state, "dash", {pid: p.id, x: p.x, y: p.y});
 
         if(m.swap && !p.held.swap && p.weapons.length > 1){
 
-            p.slot = 1 - p.slot;
-
-            resetHands(p);
+            switchSlot(p, 1 - p.slot);
 
             emit(state, "swap", {pid: p.id});
 
@@ -547,7 +574,7 @@ function interact(state, p, prop){
         if(state.run)
             state.run.found++;
 
-        emit(state, "loot", {pid: p.id, item, source: prop.source, x: prop.x, y: prop.y});
+        emit(state, "loot", {pid: p.id, name: p.name, item, source: prop.source, x: prop.x, y: prop.y});
 
         return;
 
@@ -706,13 +733,8 @@ export function command(state, pid, cmd){
         // which of the two weapons is in hand
         case "slot":
 
-            if(Number.isInteger(cmd.slot) && cmd.slot >= 0 && cmd.slot < p.weapons.length && cmd.slot !== p.slot){
-
-                p.slot = cmd.slot;
-
-                resetHands(p);
-
-            }
+            if(Number.isInteger(cmd.slot) && cmd.slot >= 0 && cmd.slot < p.weapons.length && cmd.slot !== p.slot)
+                switchSlot(p, cmd.slot);
 
             break;
 

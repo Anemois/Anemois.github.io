@@ -10,7 +10,8 @@ import {near} from "./grid.js";
 //   water      slows (map tiles, see map.js)
 //   zones      burning ground and spore clouds that attacks leave behind
 //              for a few seconds (state.zones); they hurt players standing
-//              in them, and spores slow them too
+//              in them, and spores slow them too. Zones the players make
+//              (ZONES[kind].team "p": acid, blaze) hurt enemies instead.
 //   vents      the Furnace's floor vents: they glow, then burst into flame
 //              (on a fixed beat from their phase, so every screen can show
 //              the glow without being told)
@@ -30,7 +31,8 @@ export function groundSpeed(map, zones, x, y){
 
         for(const z of zones){
 
-            const slow = ZONES[z.kind].slow;
+            const def = ZONES[z.kind];
+            const slow = def.team === "p" ? 0 : def.slow;
 
             if(slow && (x - z.x) ** 2 + (y - z.y) ** 2 < z.r * z.r)
                 k = Math.min(k, slow);
@@ -47,15 +49,19 @@ export function groundSpeed(map, zones, x, y){
 const MAX_ZONES = 140;           // past this, the oldest burns out early
 
 
-// leaves burning ground or a spore cloud
-export function addZone(state, kind, x, y, r, life){
+// leaves burning ground or a spore cloud (players' zones also carry
+// {dps, pid}: how hard they hurt enemies, and who gets the kills)
+export function addZone(state, kind, x, y, r, life, {dps = 0, pid = null} = {}){
 
     if(state.zones.length >= MAX_ZONES)
         state.zones.shift();
 
-    state.zones.push({id: newId(state), kind, x, y, r, life, max: life, next: 0.15});
+    state.zones.push({id: newId(state), kind, x, y, r, life, max: life, next: 0.15, dps, pid});
 
 }
+
+
+const zoneList = [];
 
 
 export function updateZones(state, dt){
@@ -71,12 +77,37 @@ export function updateZones(state, dt){
         if(z.next > 0)
             continue;
 
-        z.next = ZONES[z.kind].every;
+        const def = ZONES[z.kind];
+
+        z.next = def.every;
+
+        if(def.team === "p"){
+
+            for(const e of near(state.grid, z.x, z.y, z.r, zoneList)){
+
+                if(!isActive(e) || Math.hypot(e.x - z.x, e.y - z.y) > z.r + e.r * 0.5)
+                    continue;
+
+                damageEnemy(state, e, z.dps * def.every, {pid: z.pid, kind: def.hit});
+
+                // acid clings: whatever stands in it wades through
+                if(def.slow && !e.boss){
+
+                    e.slow = Math.max(e.slowT > 0 ? e.slow : 0, def.slow);
+                    e.slowT = Math.max(e.slowT, def.every + 0.1);
+
+                }
+
+            }
+
+            continue;
+
+        }
 
         for(const p of state.players){
 
             if(!p.dead && Math.hypot(p.x - z.x, p.y - z.y) < z.r + p.r * 0.4)
-                damagePlayer(state, p, ZONES[z.kind].hurt);
+                damagePlayer(state, p, def.hurt);
 
         }
 

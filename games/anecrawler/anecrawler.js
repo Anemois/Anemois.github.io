@@ -10,6 +10,9 @@ import {createCase} from "./ui/case.js";
 import {createBag} from "./ui/bag.js";
 import {createCoop} from "./ui/coop.js";
 import {createVoteBar} from "./ui/vote.js";
+import {createSettings} from "./ui/settings.js";
+import {createSounds} from "./view/sounds.js";
+import {createSound} from "../../lib/sound.js";
 import {setText, duration} from "./util.js";
 import {showSave, askSave} from "../../lib/savebox.js";
 import {
@@ -76,7 +79,18 @@ export function init(container){
 
     const renderer = createRenderer(canvas);
 
-    const lootCase = createCase($(".ac-case"), {onChoose: chooseLoot});
+    // all sound is made in code (lib/sound.js); browsers keep it off until
+    // the first click or key on the page
+    const sound = createSound({groups: ["fx", "ui"]});
+    const sounds = createSounds(sound);
+
+    const settings = createSettings($(".ac-sound-row"), $(".ac-settings"), {
+        sound,
+        renderer,
+        onClose: () => lastFrame = performance.now()
+    });
+
+    const lootCase = createCase($(".ac-case"), {onChoose: chooseLoot, sounds: sounds.ui});
 
     const bag = createBag($(".ac-bag-panel"), {
         profile: () => profile,
@@ -259,6 +273,7 @@ export function init(container){
             return;
 
         renderer.handle(events, state(), session.me, !session.online);
+        sounds.events(events, state(), session.me);
 
         for(const event of events){
 
@@ -523,6 +538,15 @@ export function init(container){
     // keys the overlays use first; true = taken
     function onKey(event){
 
+        if(settings.isOpen()){
+
+            if(event.code === "Escape")
+                settings.close();
+
+            return true;
+
+        }
+
         if(summaryOpen){
 
             if(["KeyE", "Enter", "Space", "Escape"].includes(event.code))
@@ -574,6 +598,7 @@ export function init(container){
     ui.giveUp.onclick = () => confirm(ui.giveUp, quitRun);
 
     $(".ac-resume").onclick = () => setPaused(false);
+    $(".ac-pause-settings").onclick = () => settings.open();
     $(".ac-summary-close").onclick = closeSummary;
 
     // (a box in the game, not a browser popup: those leave full screen)
@@ -697,7 +722,7 @@ export function init(container){
         lastFrame = now;
 
         // alone, the world waits while a menu or chest is open
-        const blocked = paused || summaryOpen || lootCase.isOpen();
+        const blocked = paused || summaryOpen || lootCase.isOpen() || (settings.isOpen() && !session.online);
         const player = me();
         const mouse = input.mouse();
         const aim = renderer.toWorld(mouse.x, mouse.y);
@@ -737,6 +762,8 @@ export function init(container){
 
         renderer.draw(state(), {me: session.me, dt, aim});
 
+        sounds.hands(me(), !blocked);
+
         voteBar.update(state(), session.me);
 
         if(now - lastPanel > PANEL_MS){
@@ -772,12 +799,24 @@ export function init(container){
 
     document.addEventListener("visibilitychange", () => {
 
-        if(document.hidden)
+        if(document.hidden){
+
             save();
-        else
+            sound.suspend();
+
+        }
+        else{
+
             startFrames();
+            sound.resume();
+
+        }
 
     });
+
+    // the first click or key in the game turns sound on
+    root.addEventListener("pointerdown", sound.unlock);
+    window.addEventListener("keydown", () => hovered && sound.unlock());
 
     window.addEventListener("beforeunload", save);
 
@@ -785,5 +824,10 @@ export function init(container){
     bag.refresh();
     updatePanel();
     startFrames();
+
+    // with ?dev in the address the browser console, and the test kit in
+    // dev/, can reach the running game
+    if(new URLSearchParams(location.search).has("dev"))
+        window.anecrawler = {get session(){ return session; }, get profile(){ return profile; }, renderer, sound, settings};
 
 }

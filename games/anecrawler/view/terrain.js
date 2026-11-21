@@ -761,7 +761,8 @@ export function createTerrain(ctx, fx){
 
             const fade = Math.min(1, (z.life / z.max) * 4);
 
-            if(z.kind === "fire"){
+            // (the players' blaze looks just like burning ground)
+            if(z.kind === "fire" || z.kind === "blaze"){
 
                 ctx.globalCompositeOperation = "lighter";
 
@@ -777,6 +778,29 @@ export function createTerrain(ctx, fx){
 
                 if(Math.random() < dt * z.r * 0.35 * fade)
                     fx.burst(z.x, z.y, {count: 1, colour: Math.random() < 0.5 ? "#ffb347" : "#ff6a1a", speed: 18, life: 0.55, size: 3.2, gravity: -70, glow: true, scatter: z.r * 0.6, shape: "dot"});
+
+            }
+            else if(z.kind === "acid"){
+
+                // a bubbling green pool
+                ctx.fillStyle = alpha("#365314", 0.45 * fade);
+                ctx.beginPath();
+                ctx.ellipse(z.x, z.y, z.r, z.r * 0.82, 0, 0, TAU);
+                ctx.fill();
+
+                ctx.fillStyle = alpha(ZONES.acid.colour, 0.22 * fade);
+                ctx.beginPath();
+                ctx.ellipse(z.x, z.y, z.r * 0.85, z.r * 0.68, 0, 0, TAU);
+                ctx.fill();
+
+                ctx.strokeStyle = alpha(ZONES.acid.colour, 0.45 * fade);
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.ellipse(z.x, z.y, z.r * (0.9 + 0.05 * Math.sin(time * 3)), z.r * 0.75, 0, 0, TAU);
+                ctx.stroke();
+
+                if(Math.random() < dt * z.r * 0.3 * fade)
+                    fx.burst(z.x, z.y, {count: 1, colour: Math.random() < 0.6 ? "#bef264" : "#65a30d", speed: 6, life: 0.6, size: 2.6, gravity: -16, scatter: z.r * 0.7, shape: "dot", glow: true});
 
             }
             else{

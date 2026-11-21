@@ -15,7 +15,7 @@ export function describeWeapon(item, free = false){
     const parts = [
         s.kind === "beam"
             ? `${formatNumber(s.dmg)} dmg/s`
-            : `${formatNumber(s.dmg)}${hits > 1 ? ` x${hits}` : ""}${s.rain ? ` x${s.rain}` : ""} dmg`,
+            : `${formatNumber(s.dmg)}${hits > 1 ? ` x${hits}` : ""}${s.rain || s.storm ? ` x${s.rain || s.storm}` : ""} dmg`,
         s.kind === "beam" ? "" : `${s.rate}/s`,
         s.energy > 0 ? `${s.energy}${s.kind === "beam" ? "/s" : ""} energy` : "no energy"
     ];
@@ -32,7 +32,7 @@ export function weaponTags(item){
     const tags = [KINDS[s.kind]];
 
     if(s.kind === "melee")
-        tags.push("deflects bullets");
+        tags.push(s.reflect ? "reflects bullets" : "deflects bullets");
 
     if(s.kind === "charge")
         tags.push("hold to charge");
@@ -75,6 +75,39 @@ export function weaponTags(item){
 
     if(s.rail)
         tags.push("instant line");
+
+    if(s.returns)
+        tags.push("comes back");
+
+    if(s.lob)
+        tags.push("thrown over walls");
+
+    if(s.zone)
+        tags.push(s.zone.kind === "acid" ? "acid pool" : "burning ground");
+
+    if(s.split)
+        tags.push(`splits in ${s.split.count}`);
+
+    if(s.spin)
+        tags.push("spins up");
+
+    if(s.zap)
+        tags.push(`sparks jump ${s.zap}`);
+
+    if(s.chill)
+        tags.push("freezes");
+
+    if(s.poison)
+        tags.push("poison stacks");
+
+    if(s.stagger)
+        tags.push("staggers");
+
+    if(s.leech)
+        tags.push("hits restore energy");
+
+    if(s.storm)
+        tags.push("lightning bolts");
 
     tags.push(`crit ${Math.round(s.crit * 100)}%`);
 

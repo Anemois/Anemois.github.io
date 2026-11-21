@@ -9,16 +9,21 @@ const WIN_INDEX = 48;
 const SPIN_TIME = 4.6;          // seconds (boss chests spin a little longer)
 const CARD_STEP = 118;          // card width + gap, px (matches the CSS)
 
+// how long a case spins: the world shows the find at the chest after this
+export const caseTime = source =>
+    source === "boss" ? SPIN_TIME + 0.8 : SPIN_TIME;
+
 
 // The chest popup: a strip of weapons spins past a marker and slows down
 // on the one you got. Then you either take it in hand, choosing which of
 // your two weapons it replaces, or keep it in the bag.
 // onChoose("equip", slot) or onChoose("bag") is called once per opening.
-export function createCase(element, {onChoose}){
+export function createCase(element, {onChoose, sounds = null}){
 
     element.innerHTML =
         `
         <div class="ac-case-box">
+            <div class="ac-case-fx"></div>
             <div class="ac-case-title"></div>
             <div class="ac-case-window">
                 <div class="ac-case-track"></div>
@@ -49,9 +54,12 @@ export function createCase(element, {onChoose}){
     const slots = $(".ac-case-slots");
     const bag = $(".ac-case-bag");
     const skip = $(".ac-case-skip");
+    const fxLayer = $(".ac-case-fx");
 
     let spin = null;
     let frame = 0;
+    let tier = 0;               // how rare the find is (0 common .. 5 mythic)
+    let found = "";
     let held = 0;               // the slot in hand: F takes the new weapon there
     let free = false;           // a hand is empty
 
@@ -75,7 +83,13 @@ export function createCase(element, {onChoose}){
 
         element.hidden = false;
         element.classList.toggle("boss", boss);
-        element.classList.remove("done");
+        element.classList.remove("done", "tease", "tier-0", "tier-1", "tier-2", "tier-3", "tier-4", "tier-5");
+        element.style.setProperty("--rarity", rarityOf(item).color);
+
+        clearFx();
+
+        tier = rarityOf(item).tier;
+        found = rarityOf(item).name;
 
         result.style.setProperty("--rarity", rarityOf(item).color);
 
@@ -102,7 +116,7 @@ export function createCase(element, {onChoose}){
 
         spin = {
             start: performance.now(),
-            time: (boss ? SPIN_TIME + 0.8 : SPIN_TIME) * 1000,
+            time: caseTime(source) * 1000,
             to: width / 2 - (WIN_INDEX * CARD_STEP + inside),
             passed: 0
         };
@@ -157,7 +171,13 @@ export function createCase(element, {onChoose}){
             void marker.offsetWidth;
             marker.classList.add("tick");
 
+            sounds?.tick();
+
         }
+
+        // something good is coming: the window starts to glow
+        if(tier >= 3 && t > 0.8)
+            element.classList.add("tease");
 
         if(t >= 1)
             return finish();
@@ -180,9 +200,72 @@ export function createCase(element, {onChoose}){
 
         track.children[WIN_INDEX]?.classList.add("won");
 
-        element.classList.add("done");
+        element.classList.remove("tease");
+        element.classList.add("done", `tier-${tier}`);
+
+        celebrate();
+
+        sounds?.reveal(tier);
 
         setReady(true);
+
+    }
+
+
+    // The reveal, as big as the find is rare: a ring for rare, light rays
+    // for epic, and for legendary (gold) and mythic a flash, a name
+    // banner, the box shaking and confetti raining down.
+    function celebrate(){
+
+        const add = (className, style = {}) => {
+
+            const div = document.createElement("div");
+
+            div.className = className;
+
+            for(const [name, value] of Object.entries(style))
+                div.style.setProperty(name.replace(/[A-Z]/g, c => "-" + c.toLowerCase()), value);
+
+            fxLayer.append(div);
+
+            return div;
+
+        };
+
+        if(tier >= 2)
+            add("ac-case-ring");
+
+        if(tier >= 3)
+            add("ac-case-rays");
+
+        if(tier < 4)
+            return;
+
+        add("ac-case-flash");
+
+        // the name of the rarity goes over everything, cards included
+        const banner = document.createElement("div");
+
+        banner.className = "ac-case-banner";
+        banner.textContent = found.toUpperCase() + "!";
+        fxLayer.after(banner);
+
+        const colours = tier >= 5
+            ? ["#ff5c7a", "#c58cff", "#61a8ff", "#facc15", "#ffffff"]
+            : ["#facc15", "#fde68a", "#ffffff", "#f59e0b"];
+
+        for(let i = 0; i < (tier >= 5 ? 90 : 60); i++){
+
+            add("ac-confetti", {
+                left: `${Math.random() * 100}%`,
+                background: colours[i % colours.length],
+                animationDelay: `${Math.random() * 0.9}s`,
+                animationDuration: `${1.6 + Math.random() * 1.6}s`,
+                "--drift": `${(Math.random() - 0.5) * 120}px`,
+                "--turn": `${(Math.random() - 0.5) * 1440}deg`
+            });
+
+        }
 
     }
 
@@ -299,6 +382,16 @@ export function createCase(element, {onChoose}){
 
         spin = null;
         element.hidden = true;
+
+        clearFx();
+
+    }
+
+
+    function clearFx(){
+
+        fxLayer.replaceChildren();
+        element.querySelector(".ac-case-banner")?.remove();
 
     }
 

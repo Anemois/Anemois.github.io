@@ -40,12 +40,20 @@ export function weaponPower(item){
 
     const s = weaponStats(item);
 
-    // void orbs tick about three times on a target; sword waves add a hit
-    const hits = (s.count ?? 1) * (s.burst ?? 1) * (s.rain ?? 1) * (s.tick ? 3 : 1) * (s.wave ? 1.6 : 1);
+    // void orbs tick about three times on a target; sword waves add a hit;
+    // a boomerang hits going and coming; about half of a split's pieces and
+    // of a pool's time land on someone; sparks jump on for a share
+    const hits = (s.count ?? 1) * (s.burst ?? 1) * (s.rain ?? 1) * (s.storm ?? 1) * (s.tick ? 3 : 1) * (s.wave ? 1.6 : 1) *
+        (s.returns ? 1.8 : 1) *
+        (s.split ? 1 + s.split.count * s.split.dmg * 0.5 : 1) *
+        (s.zone ? 1 + s.zone.dps * s.zone.life * 0.5 : 1) *
+        (s.zap ? 1 + s.zap * 0.42 : 1) *
+        (s.poison ? 1 + s.poison * 0.6 : 1);
 
     const perSecond =
         s.kind === "beam" ? 1 :
         s.kind === "charge" ? 1 / (1 / s.rate + s.charge) :
+        s.spin ? s.rate * 0.85 :
         s.rate;
 
     return s.dmg * hits * perSecond * (1 + s.crit);

@@ -16,7 +16,6 @@ const LOSE_RANGE = 1000;        // awake enemies this far from everyone...
 const LOSE_TIME = 6;            // ...for this long doze off again
 const TURRET_RANGE = 520;
 
-const TAU = Math.PI * 2;
 
 const pushList = [];
 const wakeList = [];
@@ -156,6 +155,15 @@ export function makeEnemy(state, type, x, y, {
         burnDps: 0,
         burnT: 0,
         burnTick: 0,
+        chill: 0,
+        chillT: 0,
+        frozenT: 0,             // frozen solid: does nothing
+        staggerT: 0,            // reeling from a heavy blow: does nothing
+        poisonStacks: 0,
+        poisonDps: 0,
+        poisonT: 0,
+        poisonTick: 0,
+        poisonBy: null,
         burnBy: null,
         flash: 0,
         lives: minion ? 0 : def.lives ?? 0,     // gets back up this many times
@@ -354,6 +362,12 @@ export function updateEnemies(state, dt){
             e.alert -= dt;
 
         }
+        else if(e.frozenT > 0 || e.staggerT > 0){
+
+            // frozen or reeling: it does nothing (whatever it was in the
+            // middle of waits until it thaws or recovers)
+
+        }
         else if(target){
 
             const slow = e.slowT > 0 ? 1 - e.slow : 1;
@@ -477,6 +491,33 @@ function statuses(state, e, dt){
 
         if(e.burnT <= 0)
             e.burnDps = 0;
+
+    }
+
+    if(e.frozenT > 0)
+        e.frozenT -= dt;
+
+    if(e.staggerT > 0)
+        e.staggerT -= dt;
+
+    if(e.chillT > 0)
+        e.chillT -= dt;
+
+    if(e.poisonT > 0){
+
+        e.poisonT -= dt;
+        e.poisonTick -= dt;
+
+        if(e.poisonTick <= 0){
+
+            e.poisonTick = 0.5;
+
+            damageEnemy(state, e, e.poisonDps * e.poisonStacks * 0.5, {pid: e.poisonBy, kind: "poison"});
+
+        }
+
+        if(e.poisonT <= 0)
+            e.poisonStacks = 0;
 
     }
 
@@ -661,8 +702,9 @@ const AI = {
             const a = angleTo(e, target);
             const fan = state.floor >= 4 || e.elite ? [-14, 0, 14] : [0];
 
+            // bone arrows: no blade stops them
             for(const offset of fan)
-                enemyBullet(state, e, a + offset * DEG, def.bullet);
+                enemyBullet(state, e, a + offset * DEG, def.bullet, {arrow: true, r: 3, color: TINT.bone});
 
             e.fireT = def.fire * (e.elite ? 0.7 : 1) * state.rng.range(0.85, 1.2);
 
@@ -706,8 +748,8 @@ const AI = {
         if(e.volley % 2)
             ring(state, e, e.elite ? 12 : 8, def.bullet, e.volley * 0.2);
         else
-            for(let i = -1; i <= 1; i++)
-                enemyBullet(state, e, angleTo(e, target) + i * 10 * DEG, def.bullet * 1.3);
+            for(let i = -1; i <= 1; i++)        // iron bolts (arrows)
+                enemyBullet(state, e, angleTo(e, target) + i * 10 * DEG, def.bullet * 1.3, {arrow: true, r: 3, color: TINT.fire});
 
         e.fireT = def.fire * (e.elite ? 0.7 : 1);
 
@@ -1294,8 +1336,9 @@ const AI = {
                 if(e.modeT > 0)
                     return;
 
+                // void darts (arrows): dodge them, they do not parry
                 for(const offset of [-9, 0, 9])
-                    enemyBullet(state, e, angleTo(e, target) + offset * DEG, def.bullet, {r: 4, color: TINT.violet});
+                    enemyBullet(state, e, angleTo(e, target) + offset * DEG, def.bullet, {arrow: true, r: 3, color: TINT.violet});
 
                 if(++e.volley < 2){
 

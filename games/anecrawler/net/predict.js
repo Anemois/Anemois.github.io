@@ -1,6 +1,7 @@
 import {STEP, TILE, PLAYER} from "../sim/data.js";
-import {movePlayer, resetHands} from "../sim/sim.js";
-import {trigger, pelletAngles, SWING_TIME, MUZZLE, HOMING_RANGE} from "../sim/combat.js";
+import {movePlayer, switchSlot} from "../sim/sim.js";
+import {trigger, coolDown, extraFor, pelletAngles, SWING_TIME, MUZZLE, HOMING_RANGE} from "../sim/combat.js";
+import {boomerang, turnBack, shards} from "../sim/flight.js";
 import {weaponStats} from "../sim/loot.js";
 import {castRay, segmentDistance, angleDiff, clamp, DEG} from "../sim/physics.js";
 import {blocksAt} from "../sim/map.js";
@@ -45,16 +46,19 @@ export function createPredictor(){
         x: 0, y: 0, r: PLAYER.radius,
         dashT: 0, dashCd: 0, dashX: 0, dashY: 0, moving: false,
         aim: 0,
+        aimX: 0,
+        aimY: 0,
         weapons: [],
         slot: 0,
         energy: 0,
-        reload: 0, burst: 0, burstT: 0, charge: -1, beam: null, swing: null,
+        reload: 0, spin: 0, cool: [0, 0], burst: 0, burstT: 0, charge: -1, beam: null, swing: null,
         shots: 0,
         held: {fire: false, dash: false, swap: false}
     };
 
     const pending = [];             // {seq, intent} the host has not used yet
     const flyers = [];
+    const born = [];                // shards made while flyers move, added after
     const events = [];              // what our own hands did, for the screen
     const struck = new Map();       // enemy id -> {t, angle}: hit on this screen just now
 
@@ -143,15 +147,15 @@ export function createPredictor(){
 
         me.weapons = mine.weapons;
         me.aim = Math.atan2(intent.aimY - me.y, intent.aimX - me.x);
+        me.aimX = intent.aimX;
+        me.aimY = intent.aimY;
 
         if(movePlayer(world.map, me, intent, STEP, intent.dash && !me.held.dash, world.zones) && live)
             events.push({type: "dash", pid: id, x: me.x, y: me.y});
 
         if(intent.swap && !me.held.swap && mine.weapons.length > 1){
 
-            me.slot = 1 - me.slot;
-
-            resetHands(me);
+            switchSlot(me, 1 - me.slot);
 
             if(live)
                 swing = null;
@@ -163,7 +167,7 @@ export function createPredictor(){
             ? mine.maxEnergy
             : Math.min(mine.maxEnergy, me.energy + PLAYER.energyRegen * STEP);
 
-        me.reload -= STEP;
+        coolDown(me, STEP);
 
         const item = mine.weapons[me.slot];
 
@@ -237,6 +241,9 @@ export function createPredictor(){
             me.slot = Y.sl;
             me.energy = Y.en;
             me.reload = Y.rl;
+            me.spin = Y.sp ?? 0;
+            me.cool = [0, 0];
+            me.cool[1 - Y.sl] = Y.co ?? 0;
             me.burst = Y.bu;
             me.burstT = Y.bt;
             me.charge = Y.ch;
@@ -304,7 +311,7 @@ export function createPredictor(){
     function shootNow(s){
 
         for(const offset of pelletAngles(s, key, me.shots, angles))
-            addFlyer(s, me.aim + offset);
+            addFlyer(s, me.aim + offset, extraFor(world.map, me, s, me.aim + offset));
 
         shotEvent(s);
 
@@ -368,7 +375,7 @@ export function createPredictor(){
             });
 
         }
-        else if(!s.rain){
+        else if(!s.rain && !s.storm){
 
             const speed = s.speed * (0.55 + 0.45 * power);
 
@@ -415,6 +422,9 @@ export function createPredictor(){
             homing: s.homing ?? 0,
             pull: s.pull ?? 0,
             burn: s.burn ?? 0,
+            split: s.split ?? null,
+            dmg: 1,
+            lob: 0,
             hits: null,
             t: seq,                 // our time it has been moved up to, in steps
             dead: false
@@ -431,6 +441,34 @@ export function createPredictor(){
         if(!f.dead)
             flyers.push(f);
 
+        hatch(seq);
+
+    }
+
+
+    // the pieces a splitting flyer broke into, as flyers of their own
+    function breakUp(f, x, y, heading, skip = null){
+
+        for(const shard of shards({...f, x, y}, heading)){
+
+            born.push({...shard, id: "f" + ++flyerId, team: "p", weapon: f.weapon, pull: 0, burn: 0, hits: skip === null ? null : [skip], dead: false});
+
+        }
+
+    }
+
+
+    function hatch(now){
+
+        for(const f of born.splice(0)){
+
+            f.t = now;
+
+            if(flyers.length < MAX_FLYERS)
+                flyers.push(f);
+
+        }
+
     }
 
 
@@ -443,8 +481,32 @@ export function createPredictor(){
 
             f.dead = true;
 
-            if(f.explode)
+            if(f.explode){
+
                 events.push({type: "boom", x: f.x, y: f.y, r: f.explode, team: "p"});
+
+                if(f.split)
+                    breakUp(f, f.x, f.y, Math.atan2(f.vy, f.vx));
+
+            }
+
+            return;
+
+        }
+
+        // in the air over everything until it lands
+        if(f.lob){
+
+            f.x += f.vx * dt;
+            f.y += f.vy * dt;
+
+            return;
+
+        }
+
+        if(f.range && boomerang(f, me, dt)){
+
+            f.dead = true;
 
             return;
 
@@ -467,9 +529,22 @@ export function createPredictor(){
             const tx = Math.floor(f.x / TILE);
             const ty = Math.floor(f.y / TILE);
 
-            if(blocksAt(map, tx, ty)){
+            if(!f.back && blocksAt(map, tx, ty)){
 
                 const angle = Math.atan2(f.vy, f.vx);
+
+                if(f.range){
+
+                    f.x = ox;
+                    f.y = oy;
+
+                    turnBack(f);
+
+                    events.push({type: "spark", x: ox, y: oy, angle, weapon: f.weapon});
+
+                    continue;
+
+                }
 
                 if(f.bounce > 0){
 
@@ -498,6 +573,9 @@ export function createPredictor(){
                 events.push(f.explode
                     ? {type: "boom", x: ox, y: oy, r: f.explode, team: "p"}
                     : {type: "spark", x: ox, y: oy, angle, weapon: f.weapon});
+
+                if(f.split)
+                    breakUp(f, ox, oy, angle + Math.PI);
 
                 return;
 
@@ -536,6 +614,9 @@ export function createPredictor(){
 
                 events.push({type: "boom", x: f.x, y: f.y, r: f.explode, team: "p"});
 
+                if(f.split)
+                    breakUp(f, f.x, f.y, Math.atan2(f.vy, f.vx));
+
                 return true;
 
             }
@@ -556,6 +637,9 @@ export function createPredictor(){
             }
 
             f.dead = true;
+
+            if(f.split)
+                breakUp(f, f.x, f.y, Math.atan2(f.vy, f.vx), e.id);
 
             return true;
 
@@ -637,6 +721,8 @@ export function createPredictor(){
 
         flyers.length = kept;
 
+        hatch(now);
+
     }
 
 
@@ -679,6 +765,9 @@ export function createPredictor(){
             mine.aim = Math.atan2(intent.aimY - mine.y, intent.aimX - mine.x);
 
         mine.slot = me.slot;
+        mine.spin = me.spin;
+        mine.reload = me.reload;
+        mine.cool = me.cool;
         mine.energy = Math.round(me.energy);
         mine.charge = me.charge;
         mine.swing = swing;

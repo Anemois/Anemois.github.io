@@ -173,6 +173,21 @@ export function createHud(ctx, effects, fog){
 
             ctx.globalAlpha = 1;
 
+            // a slow weapon still cooling down (it keeps cooling while put
+            // away, and swapping does not skip it): a bar along the top
+            const full = stats.rate > 0 ? 1 / stats.rate : 0;
+            const left = active ? me.reload : me.cool?.[slot] ?? 0;
+
+            if(full >= 0.3 && left > 0){
+
+                ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+                ctx.fillRect(x + 8, y + 4, w - 16, 3);
+
+                ctx.fillStyle = "#e5e5e5";
+                ctx.fillRect(x + 8, y + 4, (w - 16) * Math.min(1, left / full), 3);
+
+            }
+
         });
 
         if(me.weapons.length > 1)

@@ -1,4 +1,5 @@
 import {WEAPON, RARITY, TINTS} from "../sim/data.js";
+import {lobHeight} from "../sim/flight.js";
 import {alpha, mix, formatNumber} from "../../../lib/fx.js";
 import {drawWeapon, accentOf, weaponBounds, weaponLook} from "./sprites.js";
 import {circle, shadow, roundRect, eyes, aimLine, label} from "./draw.js";
@@ -86,6 +87,12 @@ export function createActors(ctx, effects){
         if(e.slowT > 0)
             colour = mix(colour, "#7dd3fc", 0.45);
 
+        if(e.poisonT > 0)
+            colour = mix(colour, "#84cc16", 0.35);
+
+        if(e.frozenT > 0)
+            colour = mix(colour, "#e0f2fe", 0.6);
+
         if(e.mode === "fuse" && Math.floor(time * 14) % 2)
             colour = "#ffffff";
 
@@ -124,6 +131,8 @@ export function createActors(ctx, effects){
         if(!e.boss && !ownEyes)
             eyes(ctx, 0, -e.r * 0.1, look, e.r, e.asleep);
 
+        statusMarks(e);
+
         ctx.restore();
 
         if(!e.boss && e.hp < e.maxHp){
@@ -137,6 +146,78 @@ export function createActors(ctx, effects){
             ctx.fillRect(e.x - w / 2, e.y - e.r - 9, w * Math.max(0, e.hp / e.maxHp), 3);
 
         }
+
+    }
+
+
+    // Frozen: a block of ice round it. Poisoned: green bubbles rising.
+    // Reeling: stars circling its head. (drawn centred on the enemy)
+    function statusMarks(e){
+
+        if(e.frozenT > 0){
+
+            const r = e.r + 4;
+
+            ctx.fillStyle = "rgba(186, 230, 253, 0.28)";
+            ctx.strokeStyle = "rgba(224, 242, 254, 0.85)";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(-r, -r * 0.4);
+            ctx.lineTo(-r * 0.5, -r);
+            ctx.lineTo(r * 0.6, -r * 0.9);
+            ctx.lineTo(r, -r * 0.2);
+            ctx.lineTo(r * 0.8, r * 0.8);
+            ctx.lineTo(-r * 0.3, r);
+            ctx.lineTo(-r * 0.95, r * 0.5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+            ctx.beginPath();
+            ctx.moveTo(-r * 0.55, -r * 0.6);
+            ctx.lineTo(-r * 0.15, -r * 0.75);
+            ctx.stroke();
+
+        }
+
+        if(e.poisonT > 0 && Math.random() < 0.18)
+            fx.burst(e.x + (Math.random() - 0.5) * e.r, e.y - e.r * 0.3, {count: 1, colour: Math.random() < 0.5 ? "#a3e635" : "#4d7c0f", speed: 12, life: 0.7, size: 2.4, gravity: -40, shape: "dot"});
+
+        if(e.staggerT > 0){
+
+            ctx.fillStyle = "#fde68a";
+
+            for(let i = 0; i < 3; i++){
+
+                const a = time * 7 + i * TAU / 3;
+                const x = Math.cos(a) * (e.r * 0.8);
+                const y = -e.r - 6 + Math.sin(a) * 3;
+
+                star(x, y, 2.6);
+
+            }
+
+        }
+
+    }
+
+
+    function star(x, y, r){
+
+        ctx.beginPath();
+
+        for(let i = 0; i < 10; i++){
+
+            const a = i * Math.PI / 5 - Math.PI / 2;
+            const k = i % 2 ? r * 0.45 : r;
+
+            i ? ctx.lineTo(x + Math.cos(a) * k, y + Math.sin(a) * k) : ctx.moveTo(x + Math.cos(a) * k, y + Math.sin(a) * k);
+
+        }
+
+        ctx.closePath();
+        ctx.fill();
 
     }
 
@@ -1477,11 +1558,79 @@ export function createActors(ctx, effects){
 
     /* ---------------- Bullets ---------------- */
 
+    // An enemy arrow: a long dark shaft with a bright head and fletching, so
+    // it reads at a glance as something other than an orb (a swing cannot
+    // stop it). A thin streak behind it shows where it is going.
+    function enemyArrow(b, colour){
+
+        const heading = Math.atan2(b.vy, b.vx);
+        const cos = Math.cos(heading);
+        const sin = Math.sin(heading);
+        const length = 15 + b.r * 2;
+        const tailX = b.x - cos * length;
+        const tailY = b.y - sin * length;
+
+        // the streak
+        ctx.lineCap = "round";
+        ctx.strokeStyle = alpha(colour, 0.22);
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(tailX - cos * 10, tailY - sin * 10);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        // the shaft
+        ctx.strokeStyle = "#2a2522";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(tailX, tailY);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+
+        ctx.strokeStyle = mix(colour, "#d6d3d1", 0.5);
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+
+        // fletching
+        ctx.strokeStyle = colour;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+
+        for(const side of [-1, 1]){
+
+            ctx.moveTo(tailX + cos * 5, tailY + sin * 5);
+            ctx.lineTo(tailX - cos * 1 - sin * side * 4, tailY - sin * 1 + cos * side * 4);
+
+        }
+
+        ctx.stroke();
+
+        // the head
+        const tip = b.r + 4;
+
+        ctx.fillStyle = mix(colour, "#ffffff", 0.35);
+        ctx.beginPath();
+        ctx.moveTo(b.x + cos * tip, b.y + sin * tip);
+        ctx.lineTo(b.x - cos * 2 - sin * 4, b.y - sin * 2 + cos * 4);
+        ctx.lineTo(b.x - cos * 2 + sin * 4, b.y - sin * 2 - cos * 4);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = "#1c1917";
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+
+    }
+
+
     function bullet(b){
 
         if(b.team === "e"){
 
             const colour = TINTS[b.tint] ?? TINTS[0];
+
+            if(b.kind === "arrow")
+                return enemyArrow(b, colour);
 
             circle(ctx, b.x, b.y, b.r + 2, alpha(colour, 0.3));
             circle(ctx, b.x, b.y, b.r, colour);
@@ -1493,6 +1642,24 @@ export function createActors(ctx, effects){
 
         const {colour, tier} = weaponLook(b.weapon);
         const heading = Math.atan2(b.vy, b.vx);
+        const shape = SHOT_LOOKS[b.kind === "shard" ? WEAPON[b.weapon]?.look === "rocket" ? "rocket" : "shard" : WEAPON[b.weapon]?.look];
+
+        if(shape && b.kind !== "slash" && b.kind !== "arrow"){
+
+            // lobbed: a shadow on the ground and the shot up in its arc
+            const lift = b.lob ? lobHeight(b) : 0;
+
+            if(b.lob)
+                shadow(ctx, b.x, b.y - b.r * 0.8, b.r * (1 - lift / 180));
+
+            ctx.save();
+            ctx.translate(b.x, b.y - lift);
+            shape(b, colour, heading);
+            ctx.restore();
+
+            return;
+
+        }
 
         if(b.kind === "slash"){
 
@@ -1587,6 +1754,198 @@ export function createActors(ctx, effects){
             fx.burst(b.x, b.y, {count: 1, colour: "#ffd27a", speed: 30, life: 0.3, size: 2, gravity: -50, glow: true});
 
     }
+
+
+    // How the shots of the second armoury look, by WEAPONS[].look. Each
+    // draws at (0, 0), the shot's place; `heading` is where it flies.
+    const SHOT_LOOKS = {
+
+        knife(b, colour, heading){
+
+            ctx.rotate(heading);
+            ctx.fillStyle = "#e5e5e5";
+            ctx.beginPath();
+            ctx.moveTo(8, 0);
+            ctx.lineTo(-2, -2.2);
+            ctx.lineTo(-2, 2.2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = colour;
+            ctx.fillRect(-7, -1.2, 5, 2.4);
+
+        },
+
+        bolt(b, colour, heading){
+
+            ctx.rotate(heading);
+            ctx.strokeStyle = alpha(colour, 0.35);
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(-26, 0);
+            ctx.lineTo(0, 0);
+            ctx.stroke();
+            ctx.strokeStyle = "#a8a29e";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-12, 0);
+            ctx.lineTo(4, 0);
+            ctx.stroke();
+            ctx.fillStyle = "#e5e5e5";
+            ctx.beginPath();
+            ctx.moveTo(9, 0);
+            ctx.lineTo(3, -3);
+            ctx.lineTo(3, 3);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = colour;
+            ctx.fillRect(-13, -3, 4, 6);
+
+        },
+
+        boomerang(b, colour){
+
+            ctx.rotate(time * 18);
+
+            ctx.strokeStyle = alpha(colour, 0.25);
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.arc(0, 0, b.r + 3, 0, TAU);
+            ctx.stroke();
+
+            ctx.fillStyle = "#c08a52";
+            ctx.beginPath();
+            ctx.moveTo(-b.r, -b.r * 0.9);
+            ctx.lineTo(b.r * 0.4, 0);
+            ctx.lineTo(-b.r, b.r * 0.9);
+            ctx.lineTo(-b.r * 0.4, 0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = colour;
+            ctx.fillRect(-b.r, -b.r * 0.9, 3, 3);
+            ctx.fillRect(-b.r, b.r * 0.9 - 3, 3, 3);
+
+        },
+
+        flask(b, colour){
+
+            ctx.rotate(time * 9);
+            circle(ctx, 0, 0, b.r + 1, "#e5e5e5");
+            circle(ctx, 0, 1, b.r - 1, colour);
+            ctx.fillStyle = "#a16207";
+            ctx.fillRect(-2, -b.r - 4, 4, 4);
+
+        },
+
+        shell(b){
+
+            circle(ctx, 0, 0, b.r + 2, alpha("#ff8a3d", 0.3));
+            circle(ctx, 0, 0, b.r, "#3f3f46");
+            circle(ctx, -b.r * 0.3, -b.r * 0.3, b.r * 0.35, "#a1a1aa");
+
+            if(Math.random() < 0.4)
+                fx.burst(b.x, b.y - lobHeight(b), {count: 1, colour: "#ffb347", speed: 10, life: 0.35, size: 2, glow: true, shape: "dot"});
+
+        },
+
+        spark(b, colour){
+
+            circle(ctx, 0, 0, b.r * 2.6, alpha(colour, 0.2));
+            circle(ctx, 0, 0, b.r, "#ffffff");
+
+            ctx.strokeStyle = colour;
+            ctx.lineWidth = 1.3;
+            ctx.beginPath();
+
+            for(let i = 0; i < 3; i++){
+
+                const a = Math.random() * TAU;
+
+                ctx.moveTo(0, 0);
+                ctx.lineTo(Math.cos(a) * (b.r + 5), Math.sin(a) * (b.r + 5));
+
+            }
+
+            ctx.stroke();
+
+        },
+
+        ice(b, colour, heading){
+
+            ctx.rotate(heading);
+            circle(ctx, 0, 0, b.r * 2, alpha(colour, 0.15));
+            ctx.fillStyle = colour;
+            ctx.beginPath();
+            ctx.moveTo(b.r * 1.8, 0);
+            ctx.lineTo(0, -b.r * 0.8);
+            ctx.lineTo(-b.r * 1.4, 0);
+            ctx.lineTo(0, b.r * 0.8);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(-b.r * 0.2, -1, b.r * 1.2, 2);
+
+            if(Math.random() < 0.2)
+                fx.burst(b.x, b.y, {count: 1, colour: "#e0f2fe", speed: 8, life: 0.4, size: 1.6, shape: "dot", glow: true});
+
+        },
+
+        rocket(b, colour, heading){
+
+            ctx.rotate(heading);
+            ctx.fillStyle = "#d4d4d8";
+            ctx.fillRect(-b.r * 1.4, -b.r * 0.55, b.r * 2.2, b.r * 1.1);
+            ctx.fillStyle = colour;
+            ctx.beginPath();
+            ctx.moveTo(b.r * 1.5, 0);
+            ctx.lineTo(b.r * 0.8, -b.r * 0.55);
+            ctx.lineTo(b.r * 0.8, b.r * 0.55);
+            ctx.closePath();
+            ctx.fill();
+
+            if(Math.random() < 0.6)
+                fx.burst(b.x - Math.cos(heading) * b.r * 1.5, b.y - Math.sin(heading) * b.r * 1.5, {count: 1, colour: Math.random() < 0.5 ? "#ffb347" : "#a1a1aa", speed: 20, life: 0.3, size: 2.2, glow: true, shape: "dot"});
+
+        },
+
+        shard(b, colour, heading){
+
+            ctx.rotate(heading);
+            ctx.fillStyle = colour;
+            ctx.beginPath();
+            ctx.moveTo(b.r * 1.8, 0);
+            ctx.lineTo(-b.r, -b.r * 0.7);
+            ctx.lineTo(-b.r * 0.5, 0);
+            ctx.lineTo(-b.r, b.r * 0.7);
+            ctx.closePath();
+            ctx.fill();
+
+        },
+
+        bee(b, colour, heading){
+
+            const wobble = Math.sin(time * 30 + b.x * 0.1) * 0.5;
+
+            ctx.rotate(heading + wobble * 0.3);
+
+            // wings, a blur
+            ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
+            ctx.beginPath();
+            ctx.ellipse(-1, -3.5, 3, 2, -0.4, 0, TAU);
+            ctx.ellipse(-1, 3.5, 3, 2, 0.4, 0, TAU);
+            ctx.fill();
+
+            ctx.fillStyle = colour;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 4.5, 3, 0, 0, TAU);
+            ctx.fill();
+
+            ctx.fillStyle = "#1c1917";
+            ctx.fillRect(-1.5, -3, 1.4, 6);
+            ctx.fillRect(1.2, -2.6, 1.2, 5.2);
+
+        }
+
+    };
 
 
     /* ---------------- Light ---------------- */

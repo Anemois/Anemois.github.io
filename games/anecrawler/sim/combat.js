@@ -5,9 +5,10 @@ import {near} from "./grid.js";
 import {DEG, angleDiff, castRay, segmentDistance, clamp} from "./physics.js";
 import {hash01} from "./rng.js";
 import {addZone} from "./ground.js";
+import {lobFields, boomerang, turnBack, shards} from "./flight.js";
 import {
     emit, newId, isActive, nearestEnemy,
-    damageEnemy, damagePlayer, explode, smashCrate
+    damageEnemy, damagePlayer, explode, smashCrate, breakCrates
 } from "./world.js";
 
 
@@ -17,6 +18,12 @@ export const MUZZLE = 12;       // bullets start this far past the body's edge
 const CHAIN_RANGE = 150;
 export const HOMING_RANGE = 280;
 const PULL_SPEED = 80;
+const ZAP_RANGE = 130;          // how far a spark jumps to the next enemy
+const ZAP_SHARE = 0.6;          // ...and how much of the hit it carries
+const CHILL_FREEZE = 3;         // chilling hits that freeze an enemy solid
+const FREEZE_TIME = 1.4;
+const POISON_STACKS = 6;
+const STORM_REACH = 170;        // storm bolts find enemies this close to the cursor
 
 // result lists for grid lookups, one per place that loops while dealing
 // damage (see grid.js)
@@ -32,7 +39,7 @@ const pellets = [];
 // the trigger is down.
 export function updateWeapon(state, p, fire, dt){
 
-    p.reload -= dt;
+    coolDown(p, dt);
 
     if(p.swing){
 
@@ -64,6 +71,20 @@ export function updateWeapon(state, p, fire, dt){
         release: power => release(state, p, s, power),
         beam: () => beam(state, p, s, dt)
     });
+
+}
+
+
+// Both weapons cool down all the time: the one in hand (p.reload) and the
+// one put away (p.cool[other slot]), so swapping never skips a cooldown.
+export function coolDown(p, dt){
+
+    p.reload -= dt;
+
+    const other = 1 - p.slot;
+
+    if(p.cool && p.cool[other] > 0)
+        p.cool[other] -= dt;
 
 }
 
@@ -101,9 +122,14 @@ export function trigger(p, s, fire, dt, act){
 
         case "gun":
 
+            // a spinning gun winds up while the trigger is held, from a
+            // third of its rate to all of it, and winds down when let go
+            if(s.spin)
+                p.spin = fire ? Math.min(1, p.spin + dt / s.spin) : Math.max(0, p.spin - dt * 2 / s.spin);
+
             if(fire && p.reload <= 0 && p.burst === 0 && act.pay(s.energy)){
 
-                p.reload = 1 / s.rate;
+                p.reload = 1 / (s.rate * (s.spin ? 0.3 + 0.7 * p.spin : 1));
 
                 act.shoot();
 
@@ -241,6 +267,12 @@ function playerBullet(state, p, s, angle, extra){
         pull: s.pull ?? 0,
         tick: s.tick ?? 0,
         tickT: 0,
+        split: s.split ?? null,
+        zap: s.zap ?? 0,
+        chill: s.chill ?? 0,
+        poison: s.poison ?? 0,
+        zone: s.zone ?? null,
+        lob: 0,
         crit: s.crit,
         hits: null,
         age: 0,
@@ -276,9 +308,24 @@ function shoot(state, p, s){
     p.shots++;
 
     for(const offset of pelletAngles(s, p.key, p.shots, pellets))
-        playerBullet(state, p, s, p.aim + offset);
+        playerBullet(state, p, s, p.aim + offset, extraFor(state.map, p, s, p.aim + offset));
 
     shotEvent(state, p, s);
+
+}
+
+
+// what a thrown weapon's shot needs on top of a plain bullet (the guest's
+// guess uses this too, see net/predict.js)
+export function extraFor(map, p, s, angle){
+
+    if(s.lob)
+        return lobFields(map, p, s, angle);
+
+    if(s.returns)
+        return {range: s.range, travel: 0, back: false, speed0: s.speed, pierce: 999};
+
+    return null;
 
 }
 
@@ -290,7 +337,7 @@ function swing(state, p, s){
     const arc = s.arc * DEG;
     const hit = [];
 
-    p.swing = {t: SWING_TIME, dur: SWING_TIME, angle: p.aim, arc, range, weapon: s.id};
+    p.swing = {t: SWING_TIME, dur: SWING_TIME, angle: p.aim, arc, range, weapon: s.id, reflect: s.reflect ? s.dmg * s.reflect : 0};
 
     for(const e of near(state.grid, p.x, p.y, range, swingList)){
 
@@ -307,9 +354,27 @@ function swing(state, p, s){
         if(Math.abs(angleDiff(p.aim, Math.atan2(e.y - p.y, e.x - p.x))) > arc / 2 + leeway)
             continue;
 
-        damageEnemy(state, e, s.dmg, {pid: p.id, crit: s.crit, knock: p.aim, push: 220});
+        damageEnemy(state, e, s.dmg, {pid: p.id, crit: s.crit, knock: p.aim, push: s.stagger ? 420 : 220});
+
+        // a heavy blow leaves it reeling for a moment (not bosses)
+        if(s.stagger && !e.boss && !e.dead){
+
+            e.staggerT = Math.max(e.staggerT ?? 0, s.stagger);
+
+            emit(state, "stagger", {id: e.id, x: e.x, y: e.y, r: e.r});
+
+        }
 
         hit.push(e.id);
+
+    }
+
+    // a reaping blade feeds its wielder's energy, a little per thing it cuts
+    if(s.leech && hit.length){
+
+        p.energy = Math.min(p.maxEnergy, p.energy + s.leech * hit.length);
+
+        emit(state, "leech", {pid: p.id, x: p.x, y: p.y, count: hit.length});
 
     }
 
@@ -370,10 +435,12 @@ function swingCrates(state, p, range, arc){
 }
 
 
-// while a swing is out, enemy bullets inside its arc are knocked away
+// while a swing is out, enemy bullets inside its arc are knocked away;
+// arrows are not: the blade glances off them and they fly on. A mirror
+// blade sends the orbs back where its wielder aims, as their own shots.
 function deflect(state, p){
 
-    const {angle, arc, range} = p.swing;
+    const {angle, arc, range, reflect} = p.swing;
     const reach = (range + 10) ** 2;
 
     for(const b of state.bullets){
@@ -389,6 +456,36 @@ function deflect(state, p){
 
         if(Math.abs(angleDiff(angle, Math.atan2(dy, dx))) > arc / 2 + 0.25)
             continue;
+
+        if(b.kind === "arrow"){
+
+            if(!b.glanced){
+
+                b.glanced = true;
+
+                emit(state, "glance", {x: b.x, y: b.y, tint: b.tint});
+
+            }
+
+            continue;
+
+        }
+
+        if(reflect){
+
+            const speed = Math.max(380, Math.hypot(b.vx, b.vy) * 1.6);
+
+            Object.assign(b, {
+                team: "p", pid: p.id, weapon: p.swing.weapon, reflected: true,
+                vx: Math.cos(p.aim) * speed, vy: Math.sin(p.aim) * speed,
+                dmg: reflect, life: 1.2, homing: 0, pierce: 0, hits: null, crit: 0.1
+            });
+
+            emit(state, "reflect", {x: b.x, y: b.y, angle: p.aim, weapon: p.swing.weapon});
+
+            continue;
+
+        }
 
         b.dead = true;
 
@@ -439,6 +536,11 @@ function release(state, p, s, power){
     else if(s.rail){
 
         rail(state, p, s, s.dmg * scale, full);
+
+    }
+    else if(s.storm){
+
+        storm(state, p, s, s.dmg * scale, s.storm + (full ? 2 : 0));
 
     }
     else{
@@ -505,6 +607,39 @@ function rail(state, p, s, dmg, full){
         weapon: s.id,
         width
     });
+
+}
+
+
+// Lightning out of the sky: a bolt on each of the enemies nearest the
+// cursor (any left over strike the ground around it)
+function storm(state, p, s, dmg, bolts){
+
+    const reach = Math.min(320, Math.hypot(p.aimX - p.x, p.aimY - p.y));
+    const cx = p.x + Math.cos(p.aim) * reach;
+    const cy = p.y + Math.sin(p.aim) * reach;
+
+    const targets = near(state.grid, cx, cy, STORM_REACH, lineList)
+        .filter(e => isActive(e) && Math.hypot(e.x - cx, e.y - cy) < STORM_REACH + e.r)
+        .sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+
+    for(let i = 0; i < bolts; i++){
+
+        const e = targets[i];
+        const a = state.rng.range(0, Math.PI * 2);
+        const r = state.rng.range(10, 70);
+        const x = e ? e.x : cx + Math.cos(a) * r;
+        const y = e ? e.y : cy + Math.sin(a) * r;
+
+        for(const hit of near(state.grid, x, y, 34, bulletList))
+            if(isActive(hit) && Math.hypot(hit.x - x, hit.y - y) < 34 + hit.r)
+                damageEnemy(state, hit, hit === e ? dmg : dmg * 0.4, {pid: p.id, crit: s.crit, kind: "shock"});
+
+        breakCrates(state, x, y, 20);
+
+        emit(state, "thunder", {pid: p.id, x, y, weapon: s.id, delay: i * 0.05});
+
+    }
 
 }
 
@@ -607,9 +742,36 @@ function moveBullet(state, b, dt){
         b.dead = true;
 
         if(b.explode)
-            explode(state, b.x, b.y, b.explode, b.dmg, {pid: b.pid, crit: b.crit, shot: true});
+            burst(state, b, b.x, b.y, Math.atan2(b.vy, b.vx));
 
         return;
+
+    }
+
+    // in the air: over everything until it lands
+    if(b.lob){
+
+        b.x += b.vx * dt;
+        b.y += b.vy * dt;
+
+        return;
+
+    }
+
+    if(b.range){
+
+        const owner = state.players.find(p => p.id === b.pid);
+
+        if(!owner || owner.dead || boomerang(b, owner, dt)){
+
+            b.dead = true;
+
+            if(owner && !owner.dead)
+                emit(state, "catch", {pid: b.pid, x: b.x, y: b.y, weapon: b.weapon});
+
+            return;
+
+        }
 
     }
 
@@ -630,7 +792,8 @@ function moveBullet(state, b, dt){
         b.x += b.vx * dt / steps;
         b.y += b.vy * dt / steps;
 
-        if(hitWall(state, b, ox, oy))
+        // (a returning shot comes home through anything)
+        if(!b.back && hitWall(state, b, ox, oy))
             return;
 
         if(b.team === "p")
@@ -656,6 +819,19 @@ function hitWall(state, b, ox, oy){
         smashCrate(state, tx, ty);
 
     const angle = Math.atan2(b.vy, b.vx);
+
+    if(b.range){
+
+        b.x = ox;
+        b.y = oy;
+
+        turnBack(b);
+
+        emit(state, "spark", {pid: b.pid, shot: true, x: ox, y: oy, angle, weapon: b.weapon});
+
+        return false;
+
+    }
 
     if(b.bounce > 0){
 
@@ -683,9 +859,12 @@ function hitWall(state, b, ox, oy){
     b.dead = true;
 
     if(b.explode)
-        explode(state, ox, oy, b.explode, b.dmg, {pid: b.pid, crit: b.crit, shot: true});
+        burst(state, b, ox, oy, angle + Math.PI);
     else
         emit(state, "spark", {pid: b.pid, shot: b.team === "p" || undefined, x: ox, y: oy, angle, weapon: b.weapon, tint: b.tint});
+
+    if(b.split && !b.explode)
+        splitAt(state, b, ox, oy, angle + Math.PI);
 
     return true;
 
@@ -732,13 +911,22 @@ function hitEnemies(state, b, dt){
 
             b.dead = true;
 
-            explode(state, b.x, b.y, b.explode, b.dmg, {pid: b.pid, crit: b.crit, shot: true});
+            burst(state, b, b.x, b.y, Math.atan2(b.vy, b.vx));
 
             return;
 
         }
 
         damageEnemy(state, e, b.dmg, {pid: b.pid, crit: b.crit, knock: Math.atan2(b.vy, b.vx), push: 60, shot: !b.tick});
+
+        if(b.chill)
+            chill(state, e, b.chill);
+
+        if(b.poison)
+            poison(e, b.dmg * b.poison, b.pid);
+
+        if(b.zap)
+            zap(state, e, b.dmg * ZAP_SHARE, b.zap, b.pid, b.weapon);
 
         if(b.slow){
 
@@ -767,9 +955,117 @@ function hitEnemies(state, b, dt){
 
         b.dead = true;
 
+        if(b.split)
+            splitAt(state, b, b.x, b.y, Math.atan2(b.vy, b.vx), e.id);
+
         return;
 
     }
+
+}
+
+
+// a shot that goes off: its blast, the shots it breaks into, the ground it
+// leaves burning or melting
+function burst(state, b, x, y, heading){
+
+    explode(state, x, y, b.explode, b.dmg, {pid: b.pid, crit: b.crit, shot: true});
+
+    if(b.split)
+        splitAt(state, b, x, y, heading);
+
+    if(b.zone)
+        addZone(state, b.zone.kind, x, y, b.zone.r, b.zone.life, {dps: b.dmg * b.zone.dps, pid: b.pid});
+
+}
+
+
+// the fan of smaller shots a splitting one breaks into
+function splitAt(state, b, x, y, heading, skip = null){
+
+    for(const shard of shards({...b, x, y}, heading)){
+
+        state.bullets.push({
+            ...shard,
+            id: newId(state),
+            team: "p",
+            pid: b.pid,
+            weapon: b.weapon,
+            slow: 0, burn: 0, pull: 0, tick: 0, tickT: 0, chill: 0, poison: 0, zone: null, lob: 0,
+            crit: b.crit,
+            hits: skip === null ? null : [skip],
+            age: 0,
+            dead: false
+        });
+
+    }
+
+    emit(state, "split", {pid: b.pid, shot: true, x, y, angle: heading, weapon: b.weapon});
+
+}
+
+
+// lightning jumps from a struck enemy to the next nearest ones
+function zap(state, from, dmg, jumps, pid, weapon){
+
+    const points = [[Math.round(from.x), Math.round(from.y)]];
+    const skip = [from.id];
+    let at = from;
+
+    for(let i = 0; i < jumps; i++){
+
+        const next = nearestEnemy(state, at, ZAP_RANGE, skip);
+
+        if(!next)
+            break;
+
+        damageEnemy(state, next, dmg, {pid, kind: "shock"});
+
+        points.push([Math.round(next.x), Math.round(next.y)]);
+        skip.push(next.id);
+
+        at = next;
+
+    }
+
+    if(points.length > 1)
+        emit(state, "zap", {pid, points, weapon});
+
+}
+
+
+// cold builds up: enough of it and an enemy freezes solid for a moment
+// (bosses only slow down)
+function chill(state, e, amount){
+
+    e.slow = Math.max(e.slowT > 0 ? e.slow : 0, 0.3);
+    e.slowT = Math.max(e.slowT, 1.2);
+
+    if(e.boss || e.dead || e.frozenT > 0)
+        return;
+
+    e.chill = (e.chillT > 0 ? e.chill ?? 0 : 0) + amount;
+    e.chillT = 2;
+
+    if(e.chill >= CHILL_FREEZE){
+
+        e.chill = 0;
+        e.frozenT = FREEZE_TIME;
+
+        emit(state, "freeze", {id: e.id, x: e.x, y: e.y, r: e.r});
+
+    }
+
+}
+
+
+// poison stacks: each hit adds a dose, all of them hurt every half second
+function poison(e, dps, pid){
+
+    e.poisonStacks = Math.min(POISON_STACKS, (e.poisonT > 0 ? e.poisonStacks : 0) + 1);
+    e.poisonDps = Math.max(e.poisonT > 0 ? e.poisonDps : 0, dps);
+    e.poisonT = 3;
+    e.poisonBy = pid;
 
 }
 

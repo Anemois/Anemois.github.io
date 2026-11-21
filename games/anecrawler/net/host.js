@@ -1,7 +1,7 @@
 import {STEP} from "../sim/data.js";
 import {randomSeed} from "../sim/rng.js";
 import {createSim, addPlayer, removePlayer, step, command} from "../sim/sim.js";
-import {encode, eventsFor, SNAP_EVERY} from "./protocol.js";
+import {encode, eventsFor, compress, createMemory, trimEvent, SNAP_EVERY} from "./protocol.js";
 
 
 // A session is how the page talks to a game world:
@@ -71,8 +71,14 @@ export function createHostSession({name, loadout, seed = randomSeed()}){
 
         local.push(...state.events);
 
-        for(const [id, guest] of guests)
-            guest.events.push(...eventsFor(state.events, state, id));
+        if(guests.size){
+
+            const trimmed = state.events.map(trimEvent);
+
+            for(const [id, guest] of guests)
+                guest.events.push(...eventsFor(trimmed, state, id));
+
+        }
 
         state.events.length = 0;
 
@@ -220,6 +226,8 @@ export function createHostSession({name, loadout, seed = randomSeed()}){
 
             const snap = encode(state, id);
 
+            compress(snap, guest.memory);
+
             snap.t0 = "s";
             snap.a = guest.ack;
             snap.ev = guest.events;
@@ -322,7 +330,7 @@ export function createHostSession({name, loadout, seed = randomSeed()}){
 
                 id = `p${++count}`;
 
-                guests.set(id, {end, queue: [], last: {...WAITING}, ack: 0, newest: 0, refilling: true, lateness: [], events: [], props: null, sinceProps: 0});
+                guests.set(id, {end, queue: [], last: {...WAITING}, ack: 0, newest: 0, refilling: true, lateness: [], events: [], props: null, sinceProps: 0, memory: createMemory()});
 
                 addPlayer(state, {id, name: `Player ${count}`, loadout: cleanLoadout(message.loadout)});
 

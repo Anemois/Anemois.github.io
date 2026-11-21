@@ -1,4 +1,5 @@
-import {WEAPON, TINTS} from "../sim/data.js";
+import {WEAPON, TINTS, RARITY} from "../sim/data.js";
+import {caseTime} from "../ui/case.js";
 import {createFx, mix} from "../../../lib/fx.js";
 import {weaponLook} from "./sprites.js";
 
@@ -7,7 +8,7 @@ import {weaponLook} from "./sprites.js";
 // look at, using the shared effects library. Nothing here feeds back into
 // the game, so every player's screen can do this for itself.
 
-const STREAMS = ["beam", "burn", "tick"];     // damage kinds merged into one number
+const STREAMS = ["beam", "burn", "tick", "poison"];     // damage kinds merged into one number
 const PICKUP_COLOURS = {energy: "#61a8ff", shard: "#c4b5fd", heart: "#ff5c7a"};
 
 
@@ -29,6 +30,19 @@ export function createEffects(){
     }
 
 
+    let lastGlance = -1e9;
+
+    // damage numbers by what dealt them
+    const HIT_COLOURS = {burn: "#ff9a5a", poison: "#a3e635", shock: "#a5f3fc"};
+
+    // effects that wait a moment (storm bolts one after another)
+    const later = [];
+
+
+    // thrown weapons: a flick, no muzzle flash
+    const THROWN = new Set(["knife", "boomerang", "flask"]);
+
+
     const shotColour = event =>
         event.weapon ? weaponLook(event.weapon).colour : TINTS[event.tint ?? 0];
 
@@ -42,7 +56,7 @@ export function createEffects(){
             case "hit": {
 
                 const stream = STREAMS.includes(event.kind);
-                const colour = event.crit ? "#facc15" : event.kind === "burn" ? "#ff9a5a" : "#ffffff";
+                const colour = event.crit ? "#facc15" : HIT_COLOURS[event.kind] ?? "#ffffff";
 
                 fx.text(event.x, event.y - event.r, event.dmg, {
                     colour,
@@ -101,10 +115,21 @@ export function createEffects(){
 
                 view.recoil.set(event.pid, 1);
 
-                if(def.rain)
+                if(def.rain || def.storm)
                     fx.sparkle(event.x, event.y, look.colour, {count: 5, spread: 6});
+                else if(THROWN.has(def.look))
+                    fx.burst(event.x, event.y, {count: 3, colour: "#d4d4d8", speed: 60, life: 0.18, size: 1.6, shape: "spark", angle: event.angle, spread: 0.6});
                 else
                     fx.muzzle(event.x, event.y, event.angle, look.colour, {big: Boolean(def.explode || def.rail || (def.count ?? 1) > 3)});
+
+                // brass flicks out of the side of a cartridge gun
+                if(def.casing){
+
+                    const side = event.angle - Math.PI / 2;
+
+                    fx.burst(event.x - Math.cos(event.angle) * 8, event.y - Math.sin(event.angle) * 8, {count: 1, colour: "#d6a84a", speed: 90, life: 0.5, size: 2, shape: "shard", angle: side, spread: 0.5, gravity: 260, drag: 2});
+
+                }
 
                 break;
 
@@ -147,6 +172,106 @@ export function createEffects(){
             case "spark":
 
                 fx.impact(event.x, event.y, event.angle, {colour: shotColour(event), count: 3, speed: 120});
+
+                break;
+
+            // lightning from the sky (one after another)
+            case "thunder": {
+
+                const colour = weaponLook(event.weapon).colour;
+
+                later.push({t: event.delay ?? 0, run(){
+
+                    const sway = (Math.random() - 0.5) * 60;
+
+                    fx.bolt(event.x + sway, event.y - 340, event.x, event.y, {colour, width: 3.5, life: 0.32, jag: 16});
+                    fx.bolt(event.x + sway * 0.5, event.y - 200, event.x, event.y, {colour: "#ffffff", width: 1.5, life: 0.2, jag: 10});
+                    fx.flash(event.x, event.y, 90, {colour, life: 0.22});
+                    fx.ring(event.x, event.y, 34, {colour, life: 0.3, width: 2.5, fill: 0.12});
+                    fx.burst(event.x, event.y, {count: 10, colour: "#e0f2fe", speed: 160, life: 0.3, shape: "spark", glow: true});
+                    fx.shake(2.2);
+
+                }});
+
+                break;
+
+            }
+
+            // a spark jumping from enemy to enemy
+            case "zap": {
+
+                const colour = weaponLook(event.weapon).colour;
+
+                for(let i = 1; i < event.points.length; i++){
+
+                    const [x1, y1] = event.points[i - 1];
+                    const [x2, y2] = event.points[i];
+
+                    fx.bolt(x1, y1, x2, y2, {colour, width: 2, life: 0.22, jag: 9});
+                    fx.burst(x2, y2, {count: 3, colour: "#ffffff", speed: 80, life: 0.18, shape: "spark", glow: true});
+
+                }
+
+                break;
+
+            }
+
+            case "freeze":
+
+                fx.burst(event.x, event.y, {count: 14, colour: "#e0f2fe", speed: 120, life: 0.45, size: 2.6, shape: "shard", drag: 3});
+                fx.ring(event.x, event.y, event.r + 14, {colour: "#bae6fd", life: 0.35, width: 2, fill: 0.2});
+                fx.text(event.x, event.y - event.r - 12, "frozen", {colour: "#bae6fd", size: 9, life: 0.8, rise: 14});
+
+                break;
+
+            case "stagger":
+
+                fx.burst(event.x, event.y - event.r, {count: 5, colour: "#fde68a", speed: 70, life: 0.35, size: 2, shape: "spark", glow: true});
+
+                break;
+
+            // energy flowing back into a reaper
+            case "leech":
+
+                fx.burst(event.x, event.y, {count: 2 + event.count * 2, colour: "#61a8ff", speed: 50, life: 0.45, size: 2, gravity: -40, glow: true, scatter: 16, shape: "dot"});
+
+                break;
+
+            case "reflect":
+
+                fx.ring(event.x, event.y, 14, {colour: "#e0f2fe", life: 0.2, width: 2});
+                fx.flash(event.x, event.y, 40, {colour: "#e0f2fe", life: 0.12});
+                fx.burst(event.x, event.y, {count: 5, colour: "#ffffff", speed: 140, life: 0.18, shape: "spark", glow: true, angle: event.angle, spread: 0.7});
+
+                break;
+
+            // a boomerang back in its thrower's hand
+            case "catch":
+
+                fx.ring(event.x, event.y, 10, {colour: weaponLook(event.weapon).colour, life: 0.18, width: 1.5});
+
+                break;
+
+            case "split":
+
+                fx.flash(event.x, event.y, 30, {colour: weaponLook(event.weapon).colour, life: 0.12});
+                fx.burst(event.x, event.y, {count: 6, colour: weaponLook(event.weapon).colour, speed: 150, life: 0.2, shape: "spark", glow: true, angle: event.angle, spread: 1.4});
+
+                break;
+
+            // a blade sliding off an arrow, which flies on; now and then a
+            // word, so it is clear why it did not stop
+            case "glance":
+
+                fx.burst(event.x, event.y, {count: 4, colour: mix(TINTS[event.tint ?? 0], "#ffffff", 0.5), speed: 90, life: 0.18, shape: "spark", glow: true});
+
+                if(performance.now() - lastGlance > 8000){
+
+                    lastGlance = performance.now();
+
+                    fx.text(event.x, event.y - 12, "can't block arrows", {colour: "#d6d3d1", size: 9, life: 1.1, rise: 16});
+
+                }
 
                 break;
 
@@ -321,10 +446,14 @@ export function createEffects(){
 
                 break;
 
+            // The lid pops at once; what came out shows when the opener's
+            // case stops spinning, as big as the find is rare.
             case "loot":
 
-                fx.sparkle(event.x, event.y, event.source === "boss" ? "#facc15" : "#e5e5e5", {count: 16, spread: 10});
-                fx.flash(event.x, event.y, 60, {colour: "#facc15", life: 0.3});
+                fx.burst(event.x, event.y - 6, {count: 8, colour: "#a8a29e", speed: 50, life: 0.5, size: 5, shape: "smoke", grow: 1, drag: 3});
+                fx.sparkle(event.x, event.y, "#e5e5e5", {count: 6, spread: 8});
+
+                later.push({t: caseTime(event.source), run: () => reveal(event, me)});
 
                 break;
 
@@ -332,6 +461,7 @@ export function createEffects(){
             case "lobby":
 
                 fx.clear();
+                later.length = 0;
 
                 break;
 
@@ -442,6 +572,61 @@ export function createEffects(){
 
 
     // how a blast looks: fire, a spore cloud, bone spikes, a falling rock...
+    // a chest's find, shown at the chest for everyone to see (and told to
+    // the others when it is gold or better)
+    function reveal(event, me){
+
+        const {x, y} = event;
+        const rarity = RARITY[WEAPON[event.item.type].rarity];
+        const colour = rarity.color;
+        const tier = rarity.tier;
+
+        fx.sparkle(x, y, colour, {count: 8 + tier * 6, spread: 8 + tier * 3});
+        fx.flash(x, y, 50 + tier * 30, {colour, life: 0.25 + tier * 0.06});
+
+        if(tier >= 1)
+            fx.ring(x, y, 30 + tier * 14, {colour, life: 0.4 + tier * 0.05, width: 2});
+
+        if(tier >= 2)
+            fx.burst(x, y, {count: 8 + tier * 4, colour, speed: 120 + tier * 30, life: 0.5, size: 2.4, shape: "spark", glow: true});
+
+        if(tier >= 3){
+
+            fx.ring(x, y, 90 + tier * 10, {colour: mix(colour, "#ffffff", 0.4), life: 0.7, width: 3, fill: 0.08});
+            fx.text(x, y - 34, rarity.name.toUpperCase(), {colour, size: 9 + tier, pop: true, life: 1.4, rise: 20});
+
+        }
+
+        // gold and better: a pillar of light, a fountain of sparks and coins,
+        // rings rolling out, the ground shaking
+        if(tier >= 4){
+
+            const mythic = tier >= 5;
+            const hot = mix(colour, "#ffffff", 0.5);
+
+            fx.bolt(x, y, x, y - 420, {colour, width: mythic ? 26 : 20, life: 1.4, core: true});
+            fx.bolt(x, y, x, y - 420, {colour: hot, width: 6, life: 1.1, core: true});
+            fx.flash(x, y, 260, {colour, life: 0.6, strength: 1});
+
+            for(let i = 0; i < (mythic ? 4 : 3); i++)
+                later.push({t: i * 0.18, run: () => fx.ring(x, y, 120 + i * 50, {colour: i % 2 ? hot : colour, life: 0.8, width: 3, fill: 0.06})});
+
+            fx.burst(x, y, {count: mythic ? 70 : 50, colour: "#facc15", speed: 260, life: 1.3, size: 3, shape: "square", angle: -Math.PI / 2, spread: 1.6, gravity: 380, drag: 0.6});
+            fx.burst(x, y, {count: mythic ? 50 : 30, colour: hot, speed: 220, life: 1.1, size: 2.6, shape: "spark", glow: true});
+
+            if(mythic)
+                fx.burst(x, y, {count: 40, colour: "#c58cff", speed: 200, life: 1.2, size: 2.6, shape: "spark", glow: true, angle: -Math.PI / 2, spread: 2.4, gravity: 120});
+
+            fx.shake(mythic ? 7 : 5);
+
+            if(event.pid !== me && event.name)
+                banner(`${event.name} found ${WEAPON[event.item.type].name}!`, `${rarity.name} · Lv ${event.item.level}`, {life: 3, colour});
+
+        }
+
+    }
+
+
     function blast(event){
 
         const r = event.r;
@@ -548,6 +733,17 @@ export function createEffects(){
     function update(dt){
 
         fx.update(dt);
+
+        for(let i = later.length - 1; i >= 0; i--){
+
+            if((later[i].t -= dt) <= 0){
+
+                later[i].run();
+                later.splice(i, 1);
+
+            }
+
+        }
 
         view.hurt = Math.max(0, view.hurt - dt * 2.5);
 

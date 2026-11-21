@@ -41,17 +41,19 @@ const MODES = [
     "move", "aim", "wind", "charge", "stun", "fuse", "blink", "swoop",
     "bones", "fade", "lunge", "raise", "puff", "focus", "beam", "under", "rise", "up", "whip", "sink"
 ];
-const ZONE_KINDS = ["fire", "spore"];
+const ZONE_KINDS = ["fire", "spore", "acid", "blaze"];
 const STRIKE_LOOKS = [undefined, "fire", "bone", "meteor", "slam"];     // enemy strikes, by -1 - index
 const PICKUPS = ["energy", "shard", "heart"];
 const WEAPON_IDS = WEAPONS.map(w => w.id);
 
 // enemy flag bits
 const ELITE_BIT = 1, CHAMPION_BIT = 2, ASLEEP = 4, HIDDEN = 8, ENRAGED = 16,
-    SLOWED = 32, BURNING = 64, FLASH = 128, ALERT = 256, SHOOTS = 512;
+    SLOWED = 32, BURNING = 64, FLASH = 128, ALERT = 256, SHOOTS = 512,
+    FROZEN = 1024, POISONED = 2048, STAGGERED = 4096;
 
-// bullet flag bits (OWN: fired by the player this snapshot is for)
-const SLASH = 1, ARROW = 2, OWN = 4;
+// bullet flag bits (OWN: fired by the player this snapshot is for, who
+// draws their own copy already; not a bullet they knocked back)
+const SLASH = 1, ARROW = 2, OWN = 4, SHARD = 8;
 
 // what a guest's own machine already showed of its own doing (see predict.js)
 const SHOWN_HERE = new Set(["shot", "swing", "rail", "shock", "dash"]);
@@ -104,7 +106,8 @@ export function encode(state, pid){
             (e.elite ? ELITE_BIT : 0) | (e.champion ? CHAMPION_BIT : 0) | (e.asleep ? ASLEEP : 0) |
             (e.hidden ? HIDDEN : 0) | (e.enraged ? ENRAGED : 0) | (e.slowT > 0 ? SLOWED : 0) |
             (e.burnT > 0 ? BURNING : 0) | (e.flash > 0 ? FLASH : 0) | (e.alert > 0 ? ALERT : 0) |
-            (e.shoots ? SHOOTS : 0);
+            (e.shoots ? SHOOTS : 0) | (e.frozenT > 0 ? FROZEN : 0) | (e.poisonT > 0 ? POISONED : 0) |
+            (e.staggerT > 0 ? STAGGERED : 0);
 
         const row = [e.id, TYPES.indexOf(e.type), flags, round(e.x), round(e.y), round(e.hp / e.maxHp * 1000), MODES.indexOf(e.mode), round(e.angle * 100)];
 
@@ -142,21 +145,28 @@ export function encode(state, pid){
         if(b.dead || !close(b))
             continue;
 
-        B.push([
+        const row = [
             b.id,
             b.team === "p" ? WEAPON_IDS.indexOf(b.weapon) : -1 - b.tint,
             round(b.x), round(b.y), round(b.vx), round(b.vy),
             round(b.r * 10),
             round(b.life * 100),
-            (b.kind === "slash" ? SLASH : 0) | (b.kind === "arrow" ? ARROW : 0) | (b.pid === pid ? OWN : 0)
-        ]);
+            (b.kind === "slash" ? SLASH : 0) | (b.kind === "arrow" ? ARROW : 0) | (b.kind === "shard" ? SHARD : 0) |
+                (b.pid === pid && !b.reflected ? OWN : 0)
+        ];
+
+        // a lobbed shot: its whole flight time, to draw the arc
+        if(b.lob)
+            row.push(round(b.lob * 100));
+
+        B.push(row);
 
     }
 
     // the receiving player's own body and hands, exact, for their prediction
     const Y = me && {
         x: me.x, y: me.y, dt: me.dashT, dc: me.dashCd, dx: me.dashX, dy: me.dashY, h: me.held.dash,
-        sl: me.slot, en: me.energy, rl: me.reload, bu: me.burst, bt: me.burstT, ch: me.charge,
+        sl: me.slot, en: me.energy, rl: me.reload, sp: me.spin || 0, co: me.cool?.[1 - me.slot] || 0, bu: me.burst, bt: me.burstT, ch: me.charge,
         bm: me.beam ? 1 : 0, sh: me.shots, hf: me.held.fire, hs: me.held.swap
     };
 
@@ -176,7 +186,7 @@ export function encode(state, pid){
         B,
         S: state.strikes.filter(s => close(s)).map(encodeStrike),
         L: state.lasers.map(l => [round(l.x), round(l.y), round(l.angle * 1000), round(l.length), l.warn > 0 ? 1 : 0, l.tint ?? 2, l.width ?? 7]),
-        Z: state.zones.filter(z => close(z)).map(z => [ZONE_KINDS.indexOf(z.kind), round(z.x), round(z.y), round(z.r), round(z.life / z.max * 100)]),
+        Z: state.zones.filter(z => close(z)).map(z => [z.id, ZONE_KINDS.indexOf(z.kind), round(z.x), round(z.y), round(z.r), round(z.life * 10), round(z.max * 10)]),
         I: state.pickups.filter(pk => close(pk, 700)).map(pk => [pk.id, PICKUPS.indexOf(pk.kind), round(pk.x), round(pk.y)]),
         O: state.props.map(prop => ({id: prop.id, kind: prop.kind, x: prop.x, y: prop.y, target: prop.target, source: prop.source, floor: prop.floor, opened: prop.opened, locked: prop.locked || undefined}))
     };
@@ -184,9 +194,14 @@ export function encode(state, pid){
 }
 
 
+// values a player field mostly has: left out of what is sent, put back
+// on arrival
+const RESTING = {hurt: 0, dashT: 0, moving: false, charge: -1, beam: null, swing: null, dead: false, revive: 0, loot: false, near: null};
+
+
 function encodePlayer(p){
 
-    return {
+    const row = {
         id: p.id,
         name: p.name,
         x: round(p.x * 10) / 10,
@@ -214,6 +229,119 @@ function encodePlayer(p){
         kills: p.kills,
         shards: p.shards
     };
+
+    for(const key in RESTING)
+        if(row[key] === RESTING[key] || row[key] === undefined)
+            delete row[key];
+
+    return row;
+
+}
+
+
+/* ---------------- Leaving out what a guest already has ---------------- */
+// Most of a snapshot repeats the one before: sleeping enemies, names and
+// weapons, burning ground. The host remembers what it last sent each guest
+// (the lines are reliable and in order) and sends only what changed; the
+// guest fills in the rest from what it kept. A whole snapshot goes now and
+// then anyway, and on every new floor.
+
+const FULL_EVERY = 30;                          // snapshots (a second)
+
+// player fields that rarely change
+const STATIC = ["name", "maxHp", "maxShield", "maxEnergy", "weapons", "kills", "shards"];
+
+
+// what the host last sent one guest
+export function createMemory(){
+
+    return {enemies: new Map(), bullets: new Map(), zones: new Map(), pickups: new Map(), statics: new Map(), place: null, since: FULL_EVERY};
+
+}
+
+
+// trims a fresh snapshot (encode()) for the guest `memory` belongs to
+export function compress(snap, memory){
+
+    const place = `${snap.m}|${snap.f}|${snap.r}`;
+    const full = memory.since >= FULL_EVERY || place !== memory.place;
+
+    memory.since = full ? 1 : memory.since + 1;
+    memory.place = place;
+
+    if(full)
+        snap.full = 1;
+
+    // enemies: the rows that changed, and which ones went. Bullets fly
+    // straight, so one is only sent again when its course changes (the
+    // guest moves it on meanwhile). Burning ground only when it comes or goes.
+    memory.enemies = delta(snap, "E", memory.enemies, row => JSON.stringify(row), full);
+    memory.bullets = delta(snap, "B", memory.bullets, row => JSON.stringify([row[1], row[4], row[5], row[6], row[8], row[9]]), full);
+    memory.zones = delta(snap, "Z", memory.zones, row => JSON.stringify([row[1], row[2], row[3], row[4], row[6]]), full);
+    memory.pickups = delta(snap, "I", memory.pickups, row => JSON.stringify(row), full);
+
+    // players: names, weapons and the like only when they change
+    for(const p of snap.P){
+
+        const fixed = JSON.stringify(STATIC.map(key => p[key]));
+
+        if(!full && memory.statics.get(p.id) === fixed)
+            for(const key of STATIC)
+                delete p[key];
+
+        memory.statics.set(p.id, fixed);
+
+    }
+
+}
+
+
+// Leaves in snap[list] only the rows (id first) whose key changed since
+// `sent`, and lists the ids that went in snap[list + "g"]; returns what
+// was sent now.
+function delta(snap, list, sent, keyOf, full){
+
+    const now = new Map();
+
+    for(const row of snap[list])
+        now.set(row[0], keyOf(row));
+
+    if(!full){
+
+        const gone = [];
+
+        for(const id of sent.keys())
+            if(!now.has(id))
+                gone.push(id);
+
+        snap[list] = snap[list].filter(row => sent.get(row[0]) !== now.get(row[0]));
+
+        if(gone.length)
+            snap[list + "g"] = gone;
+
+    }
+
+    return now;
+
+}
+
+
+// an event as sent to guests: numbers cut to what the screen needs
+export function trimEvent(event){
+
+    const out = {};
+
+    for(const key in event){
+
+        const value = event[key];
+
+        out[key] = typeof value === "number" && !Number.isInteger(value)
+            ? Math.abs(value) < 10 ? Math.round(value * 100) / 100 : Math.round(value * 10) / 10
+            : value;
+
+    }
+
+    return out;
 
 }
 
@@ -264,6 +392,13 @@ export function createMirror(seed){
     let me = null;
     let needSync = false;
     let newest = -1;                    // the latest snapshot's step
+
+    // what snapshots leave out when it has not changed (see compress)
+    const known = new Map();            // enemy id -> its row
+    const flying = new Map();           // bullet id -> the bullet, moving on
+    const burning = new Map();          // zone id -> the zone, burning down
+    const lying = new Map();            // pickup id -> the pickup
+    const statics = new Map();          // player id -> {name, weapons...}
 
     // the steady clock things are shown by
     const snaps = [];                   // {k, at: Map(key -> [x, y])}, oldest first
@@ -343,28 +478,61 @@ export function createMirror(seed){
 
         needSync = state.map.broken.length !== snap.bc;
 
-        state.players = snap.P.map(p => ({...p, r: PLAYER.radius, hostBeam: p.beam}));
+        expand(snap);
+
+        state.players = snap.P.map(p => ({...RESTING, ...p, r: PLAYER.radius, hostBeam: p.beam ?? null}));
         state.enemies = snap.E.map(decodeEnemy);
-        state.pickups = snap.I.map(([id, kind, x, y]) => ({id, kind: PICKUPS[kind], x, y}));
+        if(snap.full)
+            lying.clear();
+
+        for(const id of snap.Ig ?? [])
+            lying.delete(id);
+
+        for(const [id, kind, x, y] of snap.I)
+            lying.set(id, {id, kind: PICKUPS[kind], x, y});
+
+        state.pickups = [...lying.values()];
         state.strikes = snap.S.map(([w, x, y, r, delay, total, fx, fy]) => ({
             team: w < 0 ? "e" : "p", weapon: WEAPON_IDS[w], look: w < 0 ? STRIKE_LOOKS[-1 - w] : undefined,
             x, y, r, delay: delay / 100, start: delay / 100, total: total / 100, k: snap.k,
             from: fx === undefined ? null : {x: fx, y: fy}
         }));
         state.lasers = snap.L.map(([x, y, angle, length, warn, tint, width]) => ({x, y, angle: angle / 1000, length, warn, tint, width}));
-        state.zones = (snap.Z ?? []).map(([kind, x, y, r, life]) => ({kind: ZONE_KINDS[kind], x, y, r, life: life / 100, max: 1}));
+        // (a zone only comes once: it burns down here)
+        if(snap.full)
+            burning.clear();
+
+        for(const id of snap.Zg ?? [])
+            burning.delete(id);
+
+        for(const [id, kind, x, y, r, life, max] of snap.Z)
+            burning.set(id, {id, kind: ZONE_KINDS[kind], x, y, r, life: life / 10, start: life / 10, max: max / 10, k: snap.k});
+
+        state.zones = [...burning.values()];
         // (props only come when they change, see host.js)
         if(snap.O)
             state.props = snap.O.map(prop => ({...prop, opened: prop.opened ?? []}));
         else if(!sameFloor)
             state.props = [];
 
-        // our own bullets are already flying on this screen
-        hostBullets = [];
+        // our own bullets are already flying on this screen; the others
+        // only come when they start or turn
+        if(snap.full)
+            flying.clear();
 
-        for(const row of snap.B)
+        for(const id of snap.Bg ?? [])
+            flying.delete(id);
+
+        for(const row of snap.B){
+
             if(!(row[8] & OWN) || !own.placed)
-                hostBullets.push(decodeBullet(row, snap.k));
+                flying.set(row[0], decodeBullet(row, snap.k));
+            else
+                flying.delete(row[0]);
+
+        }
+
+        hostBullets = [...flying.values()];
 
         remember(snap);
 
@@ -407,6 +575,32 @@ export function createMirror(seed){
 
 
     // where everything was at this snapshot's step, for sliding later
+    // puts back what the snapshot left out because we had it already
+    function expand(snap){
+
+        if(snap.full)
+            known.clear();
+
+        for(const id of snap.Eg ?? [])
+            known.delete(id);
+
+        for(const row of snap.E)
+            known.set(row[0], row);
+
+        snap.E = [...known.values()];
+
+        for(const p of snap.P){
+
+            if("name" in p)
+                statics.set(p.id, Object.fromEntries(STATIC.map(key => [key, p[key]])));
+            else
+                Object.assign(p, statics.get(p.id));
+
+        }
+
+    }
+
+
     function remember(snap){
 
         const at = new Map();
@@ -583,6 +777,15 @@ export function createMirror(seed){
         for(const strike of state.strikes)
             strike.delay = strike.start - (time - strike.k) / TICKS;
 
+        if(state.zones.length){
+
+            for(const zone of state.zones)
+                zone.life = zone.start - (time - zone.k) / TICKS;
+
+            state.zones = state.zones.filter(zone => zone.life > 0);
+
+        }
+
         const mine = state.players.find(p => p.id === me);
 
         if(mine)
@@ -643,6 +846,9 @@ function decodeEnemy(row){
         enraged: Boolean(flags & ENRAGED),
         slowT: flags & SLOWED ? 1 : 0,
         burnT: flags & BURNING ? 1 : 0,
+        frozenT: flags & FROZEN ? 1 : 0,
+        poisonT: flags & POISONED ? 1 : 0,
+        staggerT: flags & STAGGERED ? 1 : 0,
         flash: flags & FLASH ? 1 : 0,
         alert: flags & ALERT ? 0.2 : 0,
         mode: MODES[mode],
@@ -655,7 +861,7 @@ function decodeEnemy(row){
 }
 
 
-function decodeBullet([id, w, x, y, vx, vy, r, life, flags], k){
+function decodeBullet([id, w, x, y, vx, vy, r, life, flags, lob], k){
 
     const weapon = w >= 0 ? WEAPONS[w] : null;
 
@@ -674,7 +880,8 @@ function decodeBullet([id, w, x, y, vx, vy, r, life, flags], k){
         r: r / 10,
         life: life / 100,
         life0: life / 100,
-        kind: flags & SLASH ? "slash" : flags & ARROW ? "arrow" : null,
+        kind: flags & SLASH ? "slash" : flags & ARROW ? "arrow" : flags & SHARD ? "shard" : null,
+        lob: lob ? lob / 100 : 0,
         pull: flags & (SLASH | ARROW) ? 0 : weapon?.pull ?? 0,
         burn: weapon?.burn ?? 0
     };

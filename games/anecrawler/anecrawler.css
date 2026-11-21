@@ -443,6 +443,160 @@
     border-color:#facc15;
 }
 
+/* the reveal (case.js celebrate): everything in the box sits above it */
+.ac-case-box {
+    position:relative;
+    overflow:hidden;
+}
+
+.ac-case-box > :not(.ac-case-fx) {
+    position:relative;
+    z-index:1;
+}
+
+.ac-case-fx {
+    position:absolute;
+    inset:0;
+    z-index:0;
+    overflow:hidden;
+    pointer-events:none;
+}
+
+/* epic and better: the window glows as the strip slows */
+.ac-case.tease .ac-case-window {
+    animation:ac-tease 0.3s ease-in-out infinite alternate;
+}
+
+@keyframes ac-tease {
+    from { box-shadow:inset 0 0 18px -8px var(--rarity); }
+    to   { box-shadow:inset 0 0 40px -4px var(--rarity); }
+}
+
+.ac-case-ring {
+    position:absolute;
+    left:50%;
+    top:62%;
+    width:60px;
+    height:60px;
+    margin:-30px 0 0 -30px;
+    border:3px solid var(--rarity);
+    border-radius:50%;
+    animation:ac-ring 0.8s ease-out forwards;
+}
+
+@keyframes ac-ring {
+    from { transform:scale(0.3); opacity:1; }
+    to   { transform:scale(9); opacity:0; }
+}
+
+.ac-case-rays {
+    position:absolute;
+    left:50%;
+    top:62%;
+    width:1000px;
+    height:1000px;
+    margin:-500px 0 0 -500px;
+    background:repeating-conic-gradient(color-mix(in srgb, var(--rarity) 30%, transparent) 0deg 7deg, transparent 7deg 20deg);
+    mask-image:radial-gradient(circle, black 0, transparent 45%);
+    opacity:0;
+    animation:ac-rays-in 0.6s ease-out forwards, ac-rays-turn 14s linear infinite;
+}
+
+@keyframes ac-rays-in {
+    to { opacity:1; }
+}
+
+@keyframes ac-rays-turn {
+    to { transform:rotate(360deg); }
+}
+
+.ac-case-flash {
+    position:absolute;
+    inset:0;
+    background:radial-gradient(circle at 50% 62%, var(--rarity), transparent 70%);
+    opacity:0;
+    animation:ac-flash 0.9s ease-out;
+}
+
+@keyframes ac-flash {
+    10% { opacity:0.85; }
+    to  { opacity:0; }
+}
+
+.ac-case-box > .ac-case-banner {
+    position:absolute;
+    z-index:3;
+    left:0;
+    right:0;
+    top:26%;
+    pointer-events:none;
+    color:var(--rarity);
+    font-size:30px;
+    font-weight:800;
+    letter-spacing:0.18em;
+    text-align:center;
+    text-shadow:0 0 14px var(--rarity), 0 0 2px #fff;
+    animation:ac-banner 2.2s ease-out forwards;
+}
+
+@keyframes ac-banner {
+    0%   { transform:scale(2.4); opacity:0; }
+    15%  { transform:scale(0.95); opacity:1; }
+    25%  { transform:scale(1.05); }
+    75%  { transform:scale(1); opacity:1; }
+    100% { transform:scale(1.1) translateY(-10px); opacity:0; }
+}
+
+.ac-confetti {
+    position:absolute;
+    top:-12px;
+    width:6px;
+    height:10px;
+    border-radius:1px;
+    animation-name:ac-fall;
+    animation-timing-function:cubic-bezier(0.3, 0.2, 0.6, 1);
+    animation-fill-mode:both;
+}
+
+@keyframes ac-fall {
+    to { transform:translate(var(--drift), 420px) rotate(var(--turn)); opacity:0.2; }
+}
+
+/* gold and better: the box catches the light and shakes */
+.ac-case.tier-4.done .ac-case-box,
+.ac-case.tier-5.done .ac-case-box {
+    border-color:var(--rarity);
+    box-shadow:0 0 50px -8px var(--rarity);
+    animation:ac-shake 0.5s ease-out;
+}
+
+@keyframes ac-shake {
+    15% { transform:translate(-6px, 3px) rotate(-0.6deg); }
+    30% { transform:translate(5px, -3px) rotate(0.5deg); }
+    45% { transform:translate(-4px, 2px); }
+    60% { transform:translate(3px, -1px); }
+    80% { transform:translate(-1px, 1px); }
+}
+
+.ac-case.tier-4.done .ac-case-icon,
+.ac-case.tier-5.done .ac-case-icon {
+    animation:ac-glow 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes ac-glow {
+    from { filter:drop-shadow(0 0 6px var(--rarity)); }
+    to   { filter:drop-shadow(0 0 18px var(--rarity)) brightness(1.25); }
+}
+
+/* mythic: the name shimmers through colours */
+.ac-case.tier-5.done .ac-case-name {
+    animation:ac-shimmer 2.4s linear infinite;
+}
+
+@keyframes ac-shimmer {
+    to { filter:hue-rotate(360deg); }
+}
+
 .ac-case-title {
     color:#ccc;
     font-size:14px;
@@ -822,4 +976,62 @@
     flex:1;
     padding:5px 8px;
     font-size:12px;
+}
+
+
+/* ---------------- Sound and settings (ui/settings.js) ---------------- */
+
+.ac-volume {
+    display:flex;
+    flex:1;
+    align-items:center;
+    gap:8px;
+    color:#ccc;
+    font-size:13px;
+}
+
+.ac-volume input,
+.ac-setting input[type=range] {
+    flex:1;
+    min-width:60px;
+    accent-color:#61a8ff;
+    cursor:pointer;
+}
+
+.ac-settings-box {
+    width:min(92%, 380px);
+    padding:18px 22px;
+    justify-items:stretch;
+}
+
+.ac-settings-box strong {
+    text-align:center;
+}
+
+.ac-setting {
+    display:grid;
+    grid-template-columns:120px 1fr 42px;
+    align-items:center;
+    gap:10px;
+    color:#ccc;
+    font-size:13px;
+}
+
+.ac-setting output {
+    color:#888;
+    font-size:12px;
+    text-align:right;
+}
+
+.ac-setting-check {
+    grid-template-columns:auto 1fr;
+    cursor:pointer;
+}
+
+.ac-setting-check input {
+    accent-color:#61a8ff;
+}
+
+.anecrawler .ac-settings-close {
+    justify-self:center;
 }
