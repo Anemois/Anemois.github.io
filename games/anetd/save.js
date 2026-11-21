@@ -1,6 +1,7 @@
 import {TOWERS, TOWER_IDS, TARGET_MODES, TROOP_UPGRADES, UPGRADES, MAX_TIER} from "./data.js";
 import {WIDTH, HEIGHT, RALLY_DEFAULT, RALLY_RANGE} from "./map.js";
 import {SKY} from "./sky-data.js";
+import {encodeCode, decodeCode, storeSave, loadStored} from "../../lib/savecode.js";
 
 
 const KEY = "anetd-save";
@@ -144,7 +145,8 @@ export function loadSave(){
 
     try{
 
-        return migrate(JSON.parse(localStorage.getItem(KEY)));
+        // scrambled, so it can't be edited by hand (lib/savecode.js)
+        return migrate(loadStored(KEY, "anetd"));
 
     }
     catch{
@@ -162,7 +164,7 @@ export function writeSave(save){
 
     try{
 
-        localStorage.setItem(KEY, JSON.stringify(save));
+        storeSave(KEY, "anetd", save);
 
     }
     catch{
@@ -172,17 +174,15 @@ export function writeSave(save){
 }
 
 
-export function encodeSave(save){
-
-    return btoa(JSON.stringify(save));
-
-}
+// a short code that can't be read or edited by hand (lib/savecode.js)
+export const encodeSave = save =>
+    encodeCode("anetd", save);
 
 
-// throws on anything that isn't a save code (old codes still work)
-export function decodeSave(code){
+// throws on anything that isn't a save code (saves of version 1 still work)
+export async function decodeSave(code){
 
-    const data = JSON.parse(atob(code));
+    const data = await decodeCode("anetd", code);
 
     if(data?.version !== VERSION && data?.version !== 1)
         throw new Error("Invalid save");

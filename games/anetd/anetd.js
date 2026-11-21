@@ -173,7 +173,7 @@ export function init(container){
     /* ---------------- Wiring ---------------- */
 
     // (a box in the game, not a browser popup: those leave full screen)
-    $(".td-export").onclick = () => showSave(root, encodeSave(save()));
+    $(".td-export").onclick = async () => showSave(root, await encodeSave(save()));
     $(".td-import").onclick = () => askSave(root, importSave);
     $(".td-open-sky").onclick = sky.open;
     ui.ascend.onclick = onAscendClick;
@@ -577,9 +577,9 @@ export function init(container){
 
 
     // throws if the code cannot be read (the box says so)
-    function importSave(code){
+    async function importSave(code){
 
-        const next = code === "0" ? newSave() : decodeSave(code);
+        const next = code === "0" ? newSave() : await decodeSave(code);
 
         disarmAscend();
 

@@ -19,6 +19,7 @@ import {createGolden} from "./golden.js";
 import {createSeekers} from "./seekers.js";
 import {loadSave, newSave, writeSave, encodeSave, decodeSave, zeroLevels} from "./save.js";
 import {format, clock, setText} from "./util.js";
+import {showSave, askSave} from "../../lib/savebox.js";
 
 
 export function init(container){
@@ -85,8 +86,9 @@ export function init(container){
 
 
     $("#open-tree").onclick = tree.open;
-    $("#export-save").onclick = () => prompt("Save code", encodeSave(save));
-    $("#import-save").onclick = importSave;
+    // (a box in the game, not a browser popup: those leave full screen)
+    $("#export-save").onclick = async () => showSave(root, await encodeSave(save));
+    $("#import-save").onclick = () => askSave(root, importSave);
     ui.prestige.onclick = onPrestigeClick;
 
     root.addEventListener("mouseenter", () => {
@@ -307,27 +309,12 @@ export function init(container){
     }
 
 
-    function importSave(){
+    // throws if the code cannot be read (the box says so); 0 starts over
+    async function importSave(code){
 
-        const code = prompt("Import save (0 resets the game)");
-
-        if(!code)
-            return;
-
-        try{
-
-            save = code.trim() === "0"
-                ? newSave()
-                : decodeSave(code);
-
-        }
-        catch{
-
-            alert("Invalid save");
-
-            return;
-
-        }
+        save = code === "0"
+            ? newSave()
+            : await decodeSave(code);
 
         disarmPrestige();
 

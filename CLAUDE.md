@@ -38,7 +38,8 @@ only those lines, instead of reading whole files (most are 500–1800 lines).
 | --- | --- |
 | `index.html/.css/.js` | The page. `GAMES` in index.js lists each game (`name`, `column` 0/1 or `full`, `order`). It loads `games/<name>/<name>.html/.css/.js`, calls the module's `init(container)`, and shows the page once all games have loaded. |
 | `lib/fx.js` | Shared: `createFx` (particles, rings, bolts, floating text, `shake`/`setShake`), `alpha`, `mix`, `formatNumber`. |
-| `lib/savebox.js` | `showSave`/`askSave`: the export/import save dialog. |
+| `lib/savebox.js` | `showSave`/`askSave`: the export/import save dialog (in the page, never `prompt`/`alert`; `load` may be async). |
+| `lib/savecode.js` | Saves that can't be read or edited by hand (scrambled with the game's name and a salt, checksummed). `encodeCode`/`decodeCode` (async, deflated): the export codes; AneCrawler packs its bag into rows first. `storeSave`/`loadStored` (sync): what AneFK, AneTD and AneCrawler keep in localStorage, under `<key>-sealed`; an old plain save is moved over once, then plain JSON is ignored. Old plain-base64 codes are refused on purpose: they were how players cheated. |
 | `lib/sound.js` | `createSound`: sound effects made in code (Web Audio, no files). `play(v => v.tone(...).noise(...), {group, gain, pan, key, gap})`, `loop()`, a volume per group, a limiter, and `unlock()` after the first click. |
 | `games/click_speed`, `reaction_time`, `tetris`, `anetan` | Small games, one file each. |
 | `games/anefk/` | AneFK, an idle blob-clicker: `data`, `economy`, `shop`, `orbs`, `seekers`, `golden`, `tree(-data)`, `save`, `amounts`. |
@@ -212,6 +213,8 @@ node dev/anecrawler/browser.mjs            headless Chromium: solo run, sound, s
                                            pictures go to /tmp/anecrawler-shots
 node dev/serve.mjs                         the site on http://localhost:8765/?dev and the
                                            game server on ws://localhost:8787/ws
+node dev/saves.mjs                         saves of AneFK, AneTD, AneCrawler: codes and stored
+                                           saves round trip, stay short, refuse edits (a second)
 node dev/brainstorm/godot.mjs export       re-export 午後激盪 into games/brainstorm/web
                                            (needs Godot 4.7.2 + its web export templates)
 node dev/brainstorm/godot.mjs server       午後激盪's server on ws://localhost:24242, used

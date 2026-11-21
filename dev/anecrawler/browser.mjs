@@ -89,8 +89,14 @@ export async function open(browser, {width = 1280, height = 2400, profile = null
     page.on("console", m => { if(m.type() === "error" && !/ERR_CONNECTION|WebSocket/.test(m.text())) errors.push(m.text()); });
     page.on("pageerror", e => errors.push(e.message + " " + (e.stack ?? "").split("\n")[1]));
 
+    // a plain save with no sealed one is read once and sealed (lib/savecode.js), so drop the sealed one: every load starts from it
     if(profile)
-        await page.addInitScript(p => localStorage.setItem("anecrawler-save", JSON.stringify(p)), profile);
+        await page.addInitScript(p => {
+
+            localStorage.removeItem("anecrawler-save-sealed");
+            localStorage.setItem("anecrawler-save", JSON.stringify(p));
+
+        }, profile);
 
     await page.goto(SITE + "/index.html?dev");
     await page.waitForFunction(() => window.anecrawler, null, {timeout: 10000});

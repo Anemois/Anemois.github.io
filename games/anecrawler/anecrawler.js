@@ -602,11 +602,11 @@ export function init(container){
     $(".ac-summary-close").onclick = closeSummary;
 
     // (a box in the game, not a browser popup: those leave full screen)
-    $(".ac-export").onclick = () => {
+    $(".ac-export").onclick = async () => {
 
         save();
 
-        showSave(root, encodeProfile(profile));
+        showSave(root, await encodeProfile(profile));
 
     };
 
@@ -614,9 +614,9 @@ export function init(container){
 
 
     // throws if the code cannot be read (the box says so)
-    function importSave(code){
+    async function importSave(code){
 
-        profile = code === "0" ? newProfile() : decodeProfile(code);
+        profile = code === "0" ? newProfile() : await decodeProfile(code);
 
         save();
 

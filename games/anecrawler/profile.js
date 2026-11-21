@@ -1,10 +1,11 @@
 import {STARTER_WEAPONS, WEAPON} from "./sim/data.js";
 import {upgradeCost, salvageValue, rarityOf} from "./sim/loot.js";
+import {encodeCode, decodeCode, storeSave, loadStored} from "../../lib/savecode.js";
 
 
 // What a player keeps between runs: the bag of weapons, the two they carry,
-// shards and records. Plain JSON in localStorage for now; an online version
-// would keep the same object on a server.
+// shards and records. Kept in localStorage, scrambled (lib/savecode.js); an
+// online version would keep the same object on a server.
 
 const KEY = "anecrawler-save";
 const VERSION = 1;
@@ -80,7 +81,8 @@ export function loadProfile(){
 
     try{
 
-        return migrate(JSON.parse(localStorage.getItem(KEY)));
+        // scrambled, so it can't be edited by hand (lib/savecode.js)
+        return migrate(loadStored(KEY, "anecrawler"));
 
     }
     catch{
@@ -96,7 +98,7 @@ export function writeProfile(profile){
 
     try{
 
-        localStorage.setItem(KEY, JSON.stringify(profile));
+        storeSave(KEY, "anecrawler", profile);
 
     }
     catch{
@@ -106,19 +108,62 @@ export function writeProfile(profile){
 }
 
 
+// a short code that can't be read or edited by hand (lib/savecode.js)
 export const encodeProfile = profile =>
-    btoa(JSON.stringify(profile));
+    encodeCode("anecrawler", {...profile, bag: profile.bag.map(packItem)});
 
 
 // throws on anything that is not a save code
-export function decodeProfile(code){
+export async function decodeProfile(code){
 
-    const data = JSON.parse(atob(code.trim()));
+    const data = await decodeCode("anecrawler", code);
 
     if(!data || !Array.isArray(data.bag))
         throw new Error("not a save");
 
-    return migrate(data);
+    let at = 0;
+
+    const bag = data.bag.map(row => {
+
+        const item = unpackItem(row, at);
+
+        at = item.at;
+
+        return item;
+
+    });
+
+    return migrate({...data, bag});
+
+}
+
+
+// In a code each weapon is a row, about a third shorter than an object:
+// [uid, type, level, from, seconds since the weapon before it, fresh, any
+// other fields]. Pickup times keep whole seconds (the bag sorts by them).
+function packItem(item, i, bag){
+
+    const {uid, type, level, from, at = 0, fresh, ...rest} = item;
+
+    const before = i ? Math.round((bag[i - 1].at ?? 0) / 1000) : 0;
+
+    const row = [uid, type, level, from, Math.round(at / 1000) - before, fresh ? 1 : 0];
+
+    return Object.keys(rest).length ? [...row, rest] : row;
+
+}
+
+
+function unpackItem(row, before){
+
+    if(!Array.isArray(row))
+        throw new Error("not a save");
+
+    const [uid, type, level, from, gap, fresh, rest] = row;
+
+    const at = Math.round(before / 1000 + (Number(gap) || 0)) * 1000;
+
+    return {...rest, uid, type, level, from, at, fresh: fresh === 1};
 
 }
 

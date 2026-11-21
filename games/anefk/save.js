@@ -1,4 +1,5 @@
 import {HELPERS, UPGRADES} from "./data.js";
+import {encodeCode, decodeCode, storeSave, loadStored} from "../../lib/savecode.js";
 import {TREE} from "./tree-data.js";
 
 
@@ -62,12 +63,12 @@ export function loadSave(){
 
     try{
 
-        const raw = localStorage.getItem(KEY);
-        const data = JSON.parse(raw);
+        // scrambled, so it can't be edited by hand (lib/savecode.js)
+        const data = loadStored(KEY, "anefk");
 
         // keep an old save under another key before it gets replaced
         if(data && data.version !== VERSION)
-            localStorage.setItem(`${KEY}-backup`, raw);
+            storeSave(`${KEY}-backup`, "anefk", data);
 
         return migrate(data);
 
@@ -83,22 +84,20 @@ export function loadSave(){
 
 export function writeSave(save){
 
-    localStorage.setItem(KEY, JSON.stringify(save));
+    storeSave(KEY, "anefk", save);
 
 }
 
 
-export function encodeSave(save){
-
-    return btoa(JSON.stringify(save));
-
-}
+// a short code that can't be read or edited by hand (lib/savecode.js)
+export const encodeSave = save =>
+    encodeCode("anefk", save);
 
 
 // throws on anything that isn't a current save code
-export function decodeSave(code){
+export async function decodeSave(code){
 
-    const data = JSON.parse(atob(code));
+    const data = await decodeCode("anefk", code);
 
     if(data?.version !== VERSION)
         throw new Error("Invalid save");
