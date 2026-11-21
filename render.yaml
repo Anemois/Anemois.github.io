@@ -17,3 +17,18 @@ services:
         value: https://www.csie.ntu.edu.tw
       - key: NODE_VERSION
         value: "22"
+
+  # The 午後激盪 server for its web build (games/brainstorm): the game's own dedicated server, run from the same
+  # index.pck the site serves. It only rebuilds when that file or its folder changes: see server/brainstorm/readme.md.
+  - type: web
+    name: afternoon-brainstorm-server
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./server/brainstorm/Dockerfile
+    dockerContext: .
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - server/brainstorm/**
+        - games/brainstorm/web/index.pck

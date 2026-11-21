@@ -44,7 +44,9 @@ only those lines, instead of reading whole files (most are 500–1800 lines).
 | `games/anefk/` | AneFK, an idle blob-clicker: `data`, `economy`, `shop`, `orbs`, `seekers`, `golden`, `tree(-data)`, `save`, `amounts`. |
 | `games/anetd/` | AneTD, a balloon tower defence: `game`, `battle`, `waves`, `map`, `shop`, `economy`, `sky(-data)`, `inspect`, `render`, `save`, `data`. |
 | `games/anecrawler/` | AneCrawler, a co-op dungeon crawler (below). |
+| `games/brainstorm/` | 午後激盪, a Godot card battler by the owner and friends. `brainstorm.js` opens the Godot web export in `web/` in an iframe when Play is pressed (it is ~45 MB), passing the online server as `?server=`. `web/` is generated: never edit it, re-export it (Testing). The Godot project is a separate repo at `~/Desktop/afternoon-brainstorm`; its `script/net/net_transport.gd` picks WebSocket on the web. |
 | `server/` | The relay: `server.js` and `websocket.js`, no dependencies, ES modules. It only pairs host and guests, and carries messages when a direct line fails. `render.yaml` deploys it. |
+| `server/brainstorm/` | 午後激盪's own dedicated server for web players: a Dockerfile running Godot headless on `games/brainstorm/web/index.pck` with `transport=websocket`, a second Render service in `render.yaml` (`.dockerignore` at the top keeps its build small). See its readme. |
 | `dev/` | The test kit (see Testing). The site never loads it. |
 
 ## AneCrawler: how it is put together
@@ -210,6 +212,10 @@ node dev/anecrawler/browser.mjs            headless Chromium: solo run, sound, s
                                            pictures go to /tmp/anecrawler-shots
 node dev/serve.mjs                         the site on http://localhost:8765/?dev and the
                                            game server on ws://localhost:8787/ws
+node dev/brainstorm/godot.mjs export       re-export 午後激盪 into games/brainstorm/web
+                                           (needs Godot 4.7.2 + its web export templates)
+node dev/brainstorm/godot.mjs server       午後激盪's server on ws://localhost:24242, used
+                                           by the game when the site is on localhost
 ```
 
 - Run check + smoke after every change, and browser.mjs when drawing or UI

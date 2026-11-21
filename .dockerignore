@@ -1,0 +1,4 @@
+# Docker builds of this repo (server/brainstorm/Dockerfile) only need these, not the whole site.
+*
+!server/brainstorm/
+!games/brainstorm/web/index.pck

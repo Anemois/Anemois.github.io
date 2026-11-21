@@ -1,0 +1,165 @@
+.brainstorm {
+    width:100%;
+    min-width:0;
+    min-height:44px;
+    padding:30px;
+    box-sizing:border-box;
+    background:#141414;
+    border:1px solid #374151;
+    border-radius:15px;
+    color:white;
+    text-align:left;
+    user-select:none;
+}
+
+.brainstorm-title {
+    margin:0;
+    color:gray;
+    font-size:24px;
+    line-height:1;
+    transition:color 0.2s ease;
+}
+
+.brainstorm-subtitle {
+    margin-left:6px;
+    font-size:15px;
+    font-weight:normal;
+}
+
+.brainstorm:hover .brainstorm-title,
+.game-slot.focused .brainstorm .brainstorm-title {
+    color:white;
+}
+
+.brainstorm-header {
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:20px;
+}
+
+.brainstorm-stats {
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+    align-items:baseline;
+    gap:6px 20px;
+    color:#888;
+}
+
+.brainstorm-content {
+    display:grid;
+    grid-template-columns:minmax(0, 1fr);
+    max-height:0;
+    margin-top:0;
+    opacity:0;
+    overflow:hidden;
+    transition:
+        max-height 0.25s ease,
+        margin-top 0.2s ease,
+        opacity 0.2s ease;
+}
+
+.brainstorm:hover .brainstorm-content,
+.game-slot.focused .brainstorm .brainstorm-content {
+    max-height:760px;
+    margin-top:24px;
+    opacity:1;
+}
+
+.brainstorm [hidden] {
+    display:none !important;
+}
+
+
+/* ---------------- Field ---------------- */
+
+.ab-field {
+    position:relative;
+    aspect-ratio:16 / 9;
+    background:black;
+    border:1px solid #333;
+    border-radius:10px;
+    overflow:hidden;
+}
+
+/* sized and shrunk to fit by brainstorm.js fit() */
+.ab-field iframe {
+    display:block;
+    border:none;
+    transform-origin:0 0;
+}
+
+.ab-cover {
+    position:absolute;
+    inset:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:14px;
+    padding:30px;
+    text-align:center;
+    background:
+        radial-gradient(circle at 50% 40%, #1d2433, #0b0b0b 70%);
+}
+
+.ab-cover strong {
+    font-size:42px;
+    letter-spacing:4px;
+}
+
+.ab-cover small {
+    max-width:520px;
+    color:#9ca3af;
+    line-height:1.5;
+}
+
+.ab-cover .ab-note {
+    color:#6b7280;
+    font-size:12px;
+}
+
+
+/* ---------------- Buttons ---------------- */
+
+.brainstorm button {
+    background:#232323;
+    border:1px solid #555;
+    border-radius:6px;
+    color:white;
+    padding:8px 14px;
+    font:inherit;
+    font-size:13px;
+    cursor:pointer;
+    transition:
+        background 0.15s ease,
+        transform 0.15s ease;
+}
+
+.brainstorm button:hover {
+    background:#303030;
+}
+
+.brainstorm button:active {
+    transform:scale(0.95);
+}
+
+.brainstorm .ab-play {
+    padding:10px 34px;
+    font-size:16px;
+    border-color:#478cbf;
+}
+
+.brainstorm .ab-close {
+    padding:4px 10px;
+    font-size:12px;
+}
+
+
+/* ---------------- Full screen ---------------- */
+
+/* the field alone is 16:9 (no side panel), so fit it to the screen's height */
+.game-slot.full:fullscreen > .game.brainstorm {
+    width:min(100%, calc((100vh - 160px) * 16 / 9 + 62px)) !important;
+}

@@ -1,0 +1,17 @@
+{
+    "version": "0.0.1",
+    "configurations": [
+        {
+            "name": "site",
+            "runtimeExecutable": "node",
+            "runtimeArgs": ["dev/serve.mjs"],
+            "port": 8765
+        },
+        {
+            "name": "brainstorm-server",
+            "runtimeExecutable": "node",
+            "runtimeArgs": ["dev/brainstorm/godot.mjs", "server"],
+            "port": 24242
+        }
+    ]
+}

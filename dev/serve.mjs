@@ -22,7 +22,8 @@ const GAME_PORT = Number(process.env.GAME_PORT ?? 8787);
 const TYPES = {
     ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript",
     ".css": "text/css", ".json": "application/json", ".png": "image/png",
-    ".svg": "image/svg+xml", ".ico": "image/x-icon", ".md": "text/plain"
+    ".svg": "image/svg+xml", ".ico": "image/x-icon", ".md": "text/plain",
+    ".wasm": "application/wasm"
 };
 
 const site = http.createServer((req, res) => {
