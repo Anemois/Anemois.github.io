@@ -1,213 +1,32 @@
-import {ORB_RESPAWN, ORB_RESERVED} from "./data.js";
-import {format} from "./util.js";
+import {SHELLS} from "./orbits.js";
 
 
-// Manages the orbs inside the field.
-//  - regular orbs: kept at a target count, a collected one is replaced after
-//    ORB_RESPAWN seconds. Seekers can collect them.
-//  - golden orbs: added by the golden scheduler, they never expire and only
-//    the player can click them.
-// Everything goes through collect(). onCollect(isGolden) pays out and returns
-// the amount, which is floated over the orb when the player clicked it.
-export function createOrbs(field, onCollect){
-
-    const regular = new Set();      // {el, x, y, r, golden}  (x, y = centre)
-    const golden = new Set();
-    const byElement = new Map();    // every orb, for click lookup
-
-    let target = 0;
+export const WIDTH = 640;
+export const HEIGHT = 352;
 
 
-    field.addEventListener(
-        "mousedown",
-        event => event.preventDefault()
-    );
+export function spawnOrb(flight){
 
-    field.addEventListener(
-        "click",
-        event => {
+    const {random, field, orbit} = flight;
+    const roll = random();
+    const tier = field.earned >= SHELLS[2].at && roll < 0.19 ? 2
+        : field.earned >= SHELLS[1].at && roll < 0.55 ? 1 : 0;
+    const shell = SHELLS[tier];
+    const hp = orbit.shell + shell.layers;
 
-            const orb = byElement.get(event.target);
+    // Give every shell its own silhouette, even in a crowded field.
+    let x, y;
 
-            if(orb)
-                collect(orb, true);
+    for(let attempt = 0; attempt < 16; attempt++){
 
-        }
-    );
+        x = 31 + random() * (WIDTH - 62);
+        y = 28 + random() * (HEIGHT - 56);
 
-
-    function create(isGolden){
-
-        const el = document.createElement("div");
-
-        el.className = isGolden ? "orb golden" : "orb";
-
-        field.appendChild(el);
-
-        // measure the real size so the orb never spills out of the field
-        const size = el.offsetWidth;
-
-        const left = Math.random() * (field.clientWidth - size);
-        const top = Math.random() * (field.clientHeight - size);
-
-        el.style.left = left + "px";
-        el.style.top = top + "px";
-
-        const orb = {
-            el,
-            x: left + size / 2,
-            y: top + size / 2,
-            r: size / 2,
-            golden: isGolden,
-            born: Date.now()
-        };
-
-        (isGolden ? golden : regular).add(orb);
-        byElement.set(el, orb);
-
-        return orb;
+        if(flight.orbs.every(orb => Math.hypot(x - orb.x, y - orb.y) > 36))
+            break;
 
     }
 
-
-    function remove(orb){
-
-        if(!(orb.golden ? golden : regular).delete(orb))
-            return false;
-
-        byElement.delete(orb.el);
-        orb.el.remove();
-
-        return true;
-
-    }
-
-
-    // floating "+value" where the player clicked
-    function pop(orb, value){
-
-        const el = document.createElement("div");
-
-        el.className = orb.golden ? "pop golden" : "pop";
-        el.textContent = "+" + format(value);
-        el.style.left = orb.x + "px";
-        el.style.top = orb.y + "px";
-
-        el.addEventListener("animationend", () => el.remove());
-
-        field.appendChild(el);
-
-    }
-
-
-    function collect(orb, byPlayer = false){
-
-        if(!remove(orb))
-            return;
-
-        if(!orb.golden)
-            setTimeout(respawn, ORB_RESPAWN * 1000);
-
-        const value = onCollect(orb.golden);
-
-        if(byPlayer)
-            pop(orb, value);
-
-    }
-
-
-    // brings one regular orb back, and keeps trying while the field is short
-    // (e.g. it can't be measured because the skill tree covers it)
-    function respawn(){
-
-        if(regular.size >= target)
-            return;
-
-        if(field.clientWidth)
-            create(false);
-
-        if(regular.size < target)
-            setTimeout(respawn, ORB_RESPAWN * 1000);
-
-    }
-
-
-    // sets how many regular orbs the field holds; fills or trims right away
-    function setCount(count){
-
-        target = count;
-
-        while(field.clientWidth && regular.size < target)
-            create(false);
-
-        for(const orb of regular){
-
-            if(regular.size <= target)
-                break;
-
-            remove(orb);
-
-        }
-
-        respawn();
-
-    }
-
-
-    // returns false if the field can't be measured right now
-    function spawnGolden(){
-
-        if(!field.clientWidth)
-            return false;
-
-        create(true);
-
-        return true;
-
-    }
-
-
-    // closest regular orb to (x, y), preferring ones not in `claimed`
-    // (golden orbs and orbs still reserved for the player are never returned)
-    function nearest(x, y, claimed){
-
-        const ripe = Date.now() - ORB_RESERVED * 1000;
-
-        let best = null;
-        let bestDistance = Infinity;
-        let fallback = null;
-        let fallbackDistance = Infinity;
-
-        for(const orb of regular){
-
-            if(orb.born > ripe)
-                continue;
-
-            const distance = (orb.x - x) ** 2 + (orb.y - y) ** 2;
-
-            if(distance < fallbackDistance){
-                fallback = orb;
-                fallbackDistance = distance;
-            }
-
-            if(distance < bestDistance && !claimed?.has(orb)){
-                best = orb;
-                bestDistance = distance;
-            }
-
-        }
-
-        return best ?? fallback;
-
-    }
-
-
-    return {
-        collect,
-        setCount,
-        nearest,
-        spawnGolden,
-        goldenCount: () => golden.size
-    };
+    return {x, y, hp, max: hp, tier, value: shell.value * orbit.shell, r: 8 + tier * 2, flash: 0};
 
 }

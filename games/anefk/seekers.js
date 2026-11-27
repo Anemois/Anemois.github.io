@@ -1,113 +1,191 @@
-const MAX_TRIPS = 8;    // orbs one seeker can collect in a single update
+import {WIDTH, HEIGHT, spawnOrb} from "./orbs.js";
+import {speed} from "./orbits.js";
 
 
-export function createSeekers(field, orbs){
-
-    const seekers = [];     // {el, x, y}
-    const claimed = new Set();
+export const DASH_COOLDOWN = 4;
+const STEP = 1 / 60;
 
 
-    function add(){
+function newSeeker(i){
 
-        const el = document.createElement("div");
+    return {
+        x: WIDTH * 0.36, y: HEIGHT * 0.5 + i * 20, angle: i - 0.25,
+        target: null, through: 0, dash: 0, hits: 0, touching: new Set(), trail: []
+    };
 
-        el.className = "seeker";
-
-        field.appendChild(el);
-
-        const seeker = {
-            el,
-            x: field.clientWidth / 2,
-            y: field.clientHeight / 2
-        };
-
-        draw(seeker, 0);
-
-        seekers.push(seeker);
-
-    }
+}
 
 
-    function setCount(count){
+export function createFlight(orbit, field, random = Math.random){
 
-        while(seekers.length < count)
-            add();
+    const flight = {orbit, field, random, orbs: [], seekers: [newSeeker(0)], cooldown: 0, remainder: 0};
 
-        while(seekers.length > count)
-            seekers.pop().el.remove();
+    for(let i = 0; i < 12; i++)
+        flight.orbs.push(spawnOrb(flight));
 
-    }
+    return flight;
 
-
-    function draw(seeker, angle){
-
-        seeker.el.style.transform =
-            `translate(${seeker.x}px, ${seeker.y}px) rotate(${angle}rad)`;
-
-    }
+}
 
 
-    // Moves every seeker `speed * dt` pixels along its trips, collecting orbs on
-    // the way. Works for any dt, so while the card is collapsed (animate = false)
-    // the game can step it coarsely without drawing and earn the same income.
-    // dt in seconds, speed in px/s
-    function update(dt, speed, animate){
+export function dash(flight, x, y){
 
-        if(!seekers.length || !field.clientWidth)
-            return;
+    if(flight.cooldown > 0)
+        return false;
 
-        // seekers spread out over different orbs when there are several
-        claimed.clear();
+    const lead = flight.seekers[0];
 
-        for(const seeker of seekers){
+    lead.angle = Math.atan2(y - lead.y, x - lead.x);
+    lead.dash = 0.45;
+    lead.hits = 0;
+    lead.target = null;
+    flight.cooldown = DASH_COOLDOWN;
+    return true;
 
-            let budget = speed * dt;
-            let angle = 0;
+}
 
-            for(let trip = 0; budget > 0 && trip < MAX_TRIPS; trip++){
 
-                const target = orbs.nearest(seeker.x, seeker.y, claimed);
+function steer(flight, seeker, velocity){
 
-                if(!target)
-                    break;
+    if(!seeker.target || !flight.orbs.includes(seeker.target)){
 
-                claimed.add(target);
+        let best = Infinity;
 
-                const dx = target.x - seeker.x;
-                const dy = target.y - seeker.y;
-                const distance = Math.hypot(dx, dy);
+        for(const orb of flight.orbs){
 
-                angle = Math.atan2(dy, dx);
+            if(seeker.touching.has(orb))
+                continue;
 
-                if(distance <= target.r + budget){
+            const distance = Math.hypot(orb.x - seeker.x, orb.y - seeker.y);
+            const shared = flight.seekers.some(other => other !== seeker && other.target === orb);
+            const score = distance + (shared ? 100 : 0);
 
-                    budget -= distance;
+            if(score < best){
 
-                    seeker.x = target.x;
-                    seeker.y = target.y;
-
-                    orbs.collect(target);
-
-                }
-                else{
-
-                    seeker.x += dx / distance * budget;
-                    seeker.y += dy / distance * budget;
-
-                    budget = 0;
-
-                }
+                best = score;
+                seeker.target = orb;
 
             }
-
-            if(animate)
-                draw(seeker, angle);
 
         }
 
     }
 
+    if(!seeker.target)
+        return;
 
-    return {setCount, update};
+    const dx = seeker.target.x - seeker.x;
+    const dy = seeker.target.y - seeker.y;
+    const turn = Math.atan2(dy, dx) - seeker.angle;
+    const limit = STEP * (4 + velocity / Math.max(5, Math.hypot(dx, dy)) * 2);
+
+    seeker.angle += Math.max(-limit, Math.min(limit, Math.atan2(Math.sin(turn), Math.cos(turn))));
+
+}
+
+
+function move(flight, seeker, velocity, onHit){
+
+    const rushing = seeker.dash > 0;
+    const travel = STEP * (rushing ? 650 : velocity);
+
+    if(!rushing && seeker.through <= 0)
+        steer(flight, seeker, velocity);
+
+    seeker.through -= STEP;
+    seeker.dash -= STEP;
+    seeker.x += Math.cos(seeker.angle) * travel;
+    seeker.y += Math.sin(seeker.angle) * travel;
+
+    // Reflect off the glass, including during a dash or a follow-through.
+    if(seeker.x < 7 || seeker.x > WIDTH - 7)
+        seeker.angle = Math.PI - seeker.angle;
+
+    if(seeker.y < 7 || seeker.y > HEIGHT - 7)
+        seeker.angle = -seeker.angle;
+
+    seeker.x = Math.max(7, Math.min(WIDTH - 7, seeker.x));
+    seeker.y = Math.max(7, Math.min(HEIGHT - 7, seeker.y));
+
+    for(let i = 0; i < flight.orbs.length; i++){
+
+        const orb = flight.orbs[i];
+
+        if(Math.hypot(orb.x - seeker.x, orb.y - seeker.y) > orb.r + 4){
+
+            seeker.touching.delete(orb);
+            continue;
+
+        }
+
+        if(seeker.touching.has(orb))
+            continue;
+
+        orb.hp = Math.max(0, orb.hp - 1 - flight.field.pierce - Number(rushing));
+        orb.flash = 0.18;
+        seeker.target = null;
+        seeker.through = 0.21;
+
+        if(rushing)
+            seeker.hits++;
+
+        let reward = 0;
+
+        if(orb.hp === 0){
+
+            reward = orb.value + (rushing ? seeker.hits - 1 : 0);
+            flight.field.balance += reward;
+            flight.field.earned += reward;
+            flight.orbs[i] = spawnOrb(flight);
+
+            for(const other of flight.seekers)
+                other.touching.delete(orb);
+
+        }
+        else
+            seeker.touching.add(orb);
+
+        onHit?.(orb, seeker, reward, rushing);
+
+    }
+
+}
+
+
+// Visible and background fields use the same flight paths and collision steps.
+export function advance(flight, seconds, stars = 0, onHit = null, trails = false){
+
+    while(flight.seekers.length <= flight.field.wing)
+        flight.seekers.push(newSeeker(flight.seekers.length));
+
+    const velocity = speed(flight.field, stars);
+    flight.remainder += seconds;
+
+    while(flight.remainder >= STEP){
+
+        flight.remainder -= STEP;
+        flight.cooldown = Math.max(0, flight.cooldown - STEP);
+
+        for(const orb of flight.orbs)
+            orb.flash = Math.max(0, orb.flash - STEP);
+
+        for(const seeker of flight.seekers){
+
+            move(flight, seeker, velocity, onHit);
+
+            if(trails){
+
+                seeker.trail.push({x: seeker.x, y: seeker.y});
+
+                if(seeker.trail.length > 19)
+                    seeker.trail.shift();
+
+            }
+            else if(seeker.trail.length)
+                seeker.trail.length = 0;
+
+        }
+
+    }
 
 }

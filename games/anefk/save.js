@@ -1,74 +1,91 @@
-import {HELPERS, UPGRADES} from "./data.js";
 import {encodeCode, decodeCode, storeSave, loadStored} from "../../lib/savecode.js";
-import {TREE} from "./tree-data.js";
+import {ORBITS, UPGRADES, openOrbit, prestigeGain} from "./orbits.js";
 
 
 const KEY = "anefk-save";
-const VERSION = 4;
+const VERSION = 5;
 
-const TREE_IDS = new Set(TREE.map(node => node.id));
-
-
-const num = value =>
-    Number.isFinite(value) && value > 0 ? value : 0;
+const whole = value => Number.isFinite(value) ? Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(value))) : 0;
 
 
-export const zeroLevels = items =>
-    Object.fromEntries(items.map(item => [item.id, 0]));
-
-
-// levels are stored by id so reordering or adding items never corrupts a save
-function levelsFrom(items, source){
-
-    return Object.fromEntries(
-        items.map(item => {
-
-            const levelValue = Math.floor(num(source?.[item.id]));
-
-            return [
-                item.id,
-                item.max === undefined ? levelValue : Math.min(levelValue, item.max)
-            ];
-
-        })
-    );
-
-}
-
-
-// Saves from before version 4 were made under the old, much faster balance:
-// their levels and gold would skip the new curve, so they start over.
-function migrate(raw){
-
-    const data = raw?.version === VERSION ? raw : {};
+export function newSave(){
 
     return {
         version: VERSION,
-        blobs: num(data.blobs),
-        runBlobs: num(data.runBlobs),
-        gold: num(data.gold),
-        helpers: levelsFrom(HELPERS, data.helpers),
-        upgrades: levelsFrom(UPGRADES, data.upgrades),
-        tree: [...new Set(Array.isArray(data.tree) ? data.tree : [])]
-            .filter(id => TREE_IDS.has(id))
+        stars: 0,
+        active: "white",
+        fields: Object.fromEntries(ORBITS.map(({id}) => [
+            id, {balance: 0, earned: 0, drive: 0, pierce: 0, wing: 0}
+        ]))
     };
 
 }
 
 
-export const newSave = () => migrate({});
+function migrate(raw){
+
+    const save = newSave();
+
+    if(raw?.version === 4){
+
+        // Old blobs and gold used a different scale. Keep a small head start.
+        const credit = Math.min(12, Math.floor(Math.log2(1 + whole(raw.runBlobs))));
+        save.fields.white.balance = credit;
+        save.fields.white.earned = credit;
+        save.stars = whole(raw.gold) || raw.tree?.length ? 1 : 0;
+        return save;
+
+    }
+
+    if(raw?.version !== VERSION)
+        return save;
+
+    save.stars = whole(raw.stars);
+
+    for(const {id} of ORBITS){
+
+        const source = raw.fields?.[id];
+        const field = save.fields[id];
+        field.earned = whole(source?.earned);
+        field.balance = Math.min(field.earned, whole(source?.balance));
+
+        for(const upgrade of UPGRADES)
+            field[upgrade.id] = Math.min(upgrade.max, whole(source?.[upgrade.id]));
+
+    }
+
+    const index = ORBITS.findIndex(orbit => orbit.id === raw.active);
+
+    if(index >= 0 && openOrbit(save, index))
+        save.active = raw.active;
+
+    return save;
+
+}
+
+
+export function ascend(save){
+
+    const gain = prestigeGain(save);
+
+    if(!gain)
+        return save;
+
+    const next = newSave();
+    next.stars = save.stars + gain;
+    return next;
+
+}
 
 
 export function loadSave(){
 
     try{
 
-        // scrambled, so it can't be edited by hand (lib/savecode.js)
         const data = loadStored(KEY, "anefk");
 
-        // keep an old save under another key before it gets replaced
         if(data && data.version !== VERSION)
-            storeSave(`${KEY}-backup`, "anefk", data);
+            storeSave(KEY + "-backup-v" + whole(data.version), "anefk", data);
 
         return migrate(data);
 
@@ -89,17 +106,14 @@ export function writeSave(save){
 }
 
 
-// a short code that can't be read or edited by hand (lib/savecode.js)
-export const encodeSave = save =>
-    encodeCode("anefk", save);
+export const encodeSave = save => encodeCode("anefk", save);
 
 
-// throws on anything that isn't a current save code
 export async function decodeSave(code){
 
     const data = await decodeCode("anefk", code);
 
-    if(data?.version !== VERSION)
+    if(data?.version !== VERSION && data?.version !== 4)
         throw new Error("Invalid save");
 
     return migrate(data);
