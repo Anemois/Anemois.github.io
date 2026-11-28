@@ -1,0 +1,39 @@
+<section class="anez" id="anez" aria-label="AneZ">
+    <div class="az-stage">
+        <canvas class="az-field" width="960" height="540" tabindex="0" aria-label="AneZ side-scrolling game"></canvas>
+        <div class="az-hud" hidden>
+            <div><span class="az-kicker az-chamber"></span><strong class="az-region"></strong></div>
+            <div class="az-vitals"><span class="az-kicker az-weapon"></span><strong class="az-health"></strong></div>
+        </div>
+        <div class="az-cover">
+            <div class="az-frame" aria-hidden="true"></div>
+            <div class="az-cover-copy">
+                <p class="az-kicker az-genre">Co-op action roguelike</p>
+                <h2>Ane<span>Z</span></h2>
+                <p class="az-subtitle">The Mourning Below</p>
+                <div class="az-rule" aria-hidden="true"><i></i></div>
+                <p class="az-intro">Beyond the ossuary gate, the dead still keep their vows.</p>
+                <div class="az-actions">
+                    <button class="az-gold" data-action="solo">Begin solo run</button>
+                    <button data-action="coop">Play co-op</button>
+                </div>
+                <button class="az-link" data-action="journal">Field journal</button>
+            </div>
+        </div>
+        <div class="az-overlay" hidden>
+            <div class="az-panel" role="group" aria-labelledby="az-panel-heading">
+                <p class="az-kicker az-eyebrow"></p>
+                <h3 id="az-panel-heading" tabindex="-1"></h3>
+                <div class="az-body"></div>
+            </div>
+        </div>
+    </div>
+    <div class="az-touch" aria-label="Touch controls" hidden>
+        <div><button data-key="left" aria-label="Move left">◀</button><button data-key="right" aria-label="Move right">▶</button><button data-key="drop" aria-label="Drop through ledge">▼</button></div>
+        <div><button data-key="jump">Jump</button><button data-key="attack">Strike</button><button data-key="dash">Dash</button></div>
+    </div>
+    <footer class="az-bar">
+        <div class="az-keys"><span><kbd>A</kbd><kbd>D</kbd> Move</span><span><kbd>Space</kbd> Jump</span><span><kbd>S</kbd> Drop</span><span><kbd>J</kbd> Strike</span><span><kbd>K</kbd> Dash</span></div>
+        <div class="az-tools"><button data-action="pause" hidden>Pause</button><button data-action="sound" aria-pressed="true">Sound on</button></div>
+    </footer>
+</section>

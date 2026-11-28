@@ -50,10 +50,18 @@ const GAMES = [
 
 
     {
+        name:"anez",
+        title:"AneZ",
+        full:true,
+        order:3
+    },
+
+
+    {
         name:"brainstorm-card",
         title:"午後激盪",
         full:true,
-        order:3
+        order:4
     }
 
 ];

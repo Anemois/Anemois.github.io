@@ -1,0 +1,98 @@
+.anez {
+    --ivory:#f6ecd6;
+    --gold:#dcb77a;
+    --edge:#7b6949;
+    position:relative;
+    overflow:hidden;
+    border:1px solid #5d5545;
+    color:var(--ivory);
+    background:#101817;
+    color-scheme:dark;
+    font:16px/1.45 Georgia, "Times New Roman", serif;
+}
+
+.anez *, .anez *::before, .anez *::after { box-sizing:border-box; }
+.anez [hidden] { display:none !important; }
+.az-stage { position:relative; aspect-ratio:16/9; isolation:isolate; }
+.az-field { display:block; width:100%; height:100%; outline:none; }
+.az-cover, .az-overlay, .az-hud { position:absolute; inset:0; }
+.az-cover {
+    display:flex;
+    align-items:center;
+    background:linear-gradient(90deg,rgba(6,15,15,.93),rgba(6,15,15,.74) 26%,rgba(6,15,15,.18) 53%,transparent 70%),url("./cover.jpg") center/cover;
+}
+.az-frame { position:absolute; inset:17px; border:1px solid #cda77360; pointer-events:none; }
+.az-frame::before,.az-frame::after { content:"✦"; position:absolute; top:-13px; color:#d6bc8a; font:18px Georgia,serif; }
+.az-frame::before { left:-8px; } .az-frame::after { right:-8px; }
+.az-cover-copy { position:relative; margin:4% 6.5%; max-width:53%; }
+.az-kicker { display:block; margin:0; font:600 .75rem/1.45 Arial,sans-serif; letter-spacing:.18em; text-transform:uppercase; color:var(--gold); }
+.az-genre { display:flex; align-items:center; gap:12px; }
+.az-genre::before { content:""; width:24px; height:1px; background:var(--gold); }
+.az-cover h2 { margin:.14em 0 0 -.035em; font:normal clamp(64px,10vw,147px)/.89 Georgia,serif; letter-spacing:-.075em; text-shadow:0 4px 24px #071615; }
+.az-cover h2 span { font-style:italic; color:#edcf96; }
+.az-subtitle { margin:.75em 0 0 .18em; font:italic clamp(17px,2.6vw,32px)/1.2 Georgia,serif; color:#ead3a9; }
+.az-rule { display:flex; align-items:center; width:min(210px,60%); gap:7px; margin:1.35em 0 1.1em; color:#b89762; }
+.az-rule::before,.az-rule::after { content:""; flex:1; height:1px; background:currentColor; }
+.az-rule i { width:6px; height:6px; border:1px solid currentColor; transform:rotate(45deg); }
+.az-intro { margin:0 0 1.3em; max-width:30ch; line-height:1.5; color:#e0dccc; }
+.az-actions,.az-tools,.az-keys,.az-bar { display:flex; align-items:center; gap:10px; }
+.anez button,.anez input { font:600 .86rem/1.25 Arial,sans-serif; }
+.anez button { color:var(--ivory); border:1px solid var(--edge); background:#101b19ed; padding:.77em 1.15em; border-radius:2px; cursor:pointer; }
+.anez button:hover { border-color:var(--gold); background:#28312a; }
+.anez button:focus-visible,.anez input:focus-visible { outline:2px solid #ffe4a1; outline-offset:3px; }
+.anez button:disabled { cursor:default; opacity:.58; }
+.anez .az-gold { color:#242219; border-color:#e2c18a; background:#ddbe87; }
+.anez .az-gold:hover { background:#f4d7a4; }
+.anez .az-link { margin-top:1.1em; padding:.2em 0; border:0; border-bottom:1px solid #a78d63; background:transparent; color:#dec9a4; font-family:Georgia,serif; font-weight:normal; }
+.az-bar { justify-content:space-between; flex-wrap:wrap; padding:9px 16px; border-top:1px solid #504939; background:#101716; }
+.az-keys { flex-wrap:wrap; gap:8px 15px; color:#c6c6b8; font:13px/1.3 Arial,sans-serif; }
+.az-keys span { display:flex; align-items:center; gap:4px; }
+.az-keys kbd { padding:2px 5px; border:1px solid #53615b; border-radius:3px; font:12px/1.2 monospace; color:#e0dfd2; }
+.az-tools { margin-left:auto; }
+.anez .az-tools button { font-size:.8rem; padding:.38em .68em; color:#d9ceb8; }
+.az-hud { inset:14px 16px auto; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; pointer-events:none; text-shadow:0 1px 4px #000; }
+.az-hud > div { padding:6px 11px; background:#0d171aca; border-top:1px solid #ad8e5d; }
+.az-hud strong { display:block; font:normal clamp(15px,2vw,24px)/1.2 Georgia,serif; }
+.az-hud .az-kicker { font-size:.67rem; letter-spacing:.13em; }
+.az-vitals { text-align:right; }
+.az-overlay { z-index:2; display:grid; place-items:center; padding:15px; background:#04100f9e; overflow:auto; }
+.az-panel { position:relative; width:min(100%,500px); max-height:100%; overflow:auto; padding:clamp(16px,3vw,36px); border:1px solid #a58b60; box-shadow:0 8px 50px #0009; background:linear-gradient(140deg,#263733,#121d1d 75%); }
+.az-panel h3 { margin:.15em 0 .45em; font:normal clamp(24px,3.8vw,42px)/1.1 Georgia,serif; outline:none; }
+.az-body p { color:#e0dccc; margin:.5em 0 1.15em; }
+.az-body .az-actions { flex-wrap:wrap; }
+.az-room-code { font:normal 2rem/1.4 monospace; letter-spacing:.2em; color:#f6db9d; }
+.az-body form { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0; }
+.az-body input { padding:9px; background:#0c1515; color:var(--ivory); border:1px solid #918064; width:8em; text-transform:uppercase; letter-spacing:.15em; }
+.az-offers { display:grid; gap:7px; }
+.anez .az-offers button { text-align:left; display:grid; gap:2px; }
+.az-offers strong { color:#ecd3a3; font:normal 1.1rem/1.3 Georgia,serif; }
+.az-offers small { color:#d0d4c9; font:normal .83rem/1.4 Arial,sans-serif; }
+.az-touch { display:none; }
+.az-plate { float:right; width:32%; margin:0 0 8px 12px; background:radial-gradient(ellipse,#3c4b43,transparent 70%); }
+.az-journal-name { color:var(--ivory); font:normal 1.3rem Georgia,serif; }
+.az-journal-nav { clear:both; }
+.game-slot.full:fullscreen > .anez:first-child { width:min(100%, calc((100dvh - 110px) * 1.7778)) !important; }
+@media (pointer:coarse) {
+    .az-touch { display:flex; justify-content:space-between; gap:4px; padding:6px; background:#151e1d; }
+    .az-touch div { display:flex; gap:4px; }
+    .az-touch button { padding:9px clamp(4px,1.4vw,10px); min-height:42px; touch-action:none; user-select:none; -webkit-user-select:none; }
+    .az-keys { display:none; }
+    .game-slot.full:fullscreen > .anez:first-child { width:min(100%, calc((100dvh - 150px) * 1.7778)) !important; }
+}
+@media (max-width:650px) {
+    .az-stage:has(.az-cover:not([hidden])) { min-height:310px; }
+    .az-stage:has(.az-overlay:not([hidden])) { min-height:335px; }
+    .az-cover-copy { max-width:84%; margin:20px 8%; }
+    .az-cover { background-position:63% center; }
+    .az-cover h2 { font-size:68px; }
+    .az-rule { margin:.7em 0; }
+    .az-intro { font-size:.91rem; max-width:24ch; margin-bottom:.8em; }
+    .az-frame { inset:9px; }
+    .az-actions { gap:6px; }
+    .az-bar { padding:7px; }
+    .az-kicker { font-size:.65rem; }
+    .az-hud { inset:4px 6px auto; }
+    .az-hud > div { padding:2px 5px; }
+    .az-hud .az-kicker { font-size:9px; }
+    .az-hud strong { font-size:12px; }
+}

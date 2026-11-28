@@ -23,7 +23,7 @@ try{
     await page.goto(site);
     await page.waitForSelector("#games-wrapper.ready");
     assert.equal(await page.locator(".game-load-error").count(), 0);
-    assert.equal(await page.locator(".game-slot .fullscreen-button").count(), 8);
+    assert.equal(await page.locator(".game-slot .fullscreen-button").count(), 9);
     assert.equal(await page.locator(".af-name").textContent(), "White orbit");
     assert.equal(exports.length, 0, "the Godot export loads only after Play");
 
@@ -39,7 +39,7 @@ try{
     await page.reload();
     await page.waitForSelector("#games-wrapper.ready");
     assert.match(await page.locator(".game-load-error").textContent(), /午後激盪/);
-    assert.equal(await page.locator(".game-slot .fullscreen-button").count(), 7);
+    assert.equal(await page.locator(".game-slot .fullscreen-button").count(), 8);
     await page.locator(".anefk").hover();
     await page.locator(".af-chart").click();
     assert.equal(await page.locator(".af-name").textContent(), "Constellation");
