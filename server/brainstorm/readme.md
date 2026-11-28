@@ -8,7 +8,7 @@ browser cannot do, so the web build talks to a copy of that server started
 with `transport=websocket`. This folder runs that copy on Render, which
 gives it a `wss://` address.
 
-It runs straight out of `games/brainstorm/web/index.pck`, the same file the
+It runs straight out of `games/brainstorm/index.pck`, the same file the
 site serves. So the server and the web build are always the same version,
 and the game's version check lets them play.
 
@@ -38,10 +38,10 @@ http://localhost:8765). Open the game in two tabs to play yourself.
    `[server] Afternoon Brainstorm dedicated server started: port 10000 (WebSocket, TCP)`.
 3. If Render gave it a different address than
    `https://afternoon-brainstorm-server.onrender.com`, put yours in
-   `PUBLIC_SERVER` in `games/brainstorm/brainstorm.js` (`wss://` instead of
+   `PUBLIC_SERVER` in `games/brainstorm-card/brainstorm-card.js` (`wss://` instead of
    `https://`, nothing on the end).
 
-It only rebuilds when this folder or `games/brainstorm/web/index.pck`
+It only rebuilds when this folder or `games/brainstorm/index.pck`
 changes. The AneCrawler relay is not touched.
 
 The free plan sleeps after 15 minutes without visitors, and waking takes
@@ -54,7 +54,7 @@ in progress.
 ## When the game changes
 
 1. Pull the friends' project (`~/Desktop/afternoon-brainstorm`).
-2. `node dev/brainstorm/godot.mjs export` rebuilds `games/brainstorm/web`.
+2. `node dev/brainstorm/godot.mjs export` rebuilds `games/brainstorm`.
 3. Push (Render rebuilds the server from the new `index.pck`) and upload
    the site.
 

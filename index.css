@@ -196,8 +196,12 @@ body {
 
 /* ---------------- Error ---------------- */
 
-#games-wrapper.error #games-loading {
+.game-load-error {
 
+    margin:0;
+    padding:20px;
+    border:1px solid #374151;
+    border-radius:15px;
     color:#ff7185;
 
 }

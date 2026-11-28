@@ -25,7 +25,7 @@ RUN apt-get update \
 
 RUN useradd --uid 10001 --user-group --create-home godot
 
-COPY games/brainstorm/web/index.pck /app/game.pck
+COPY games/brainstorm/index.pck /app/game.pck
 
 USER godot
 

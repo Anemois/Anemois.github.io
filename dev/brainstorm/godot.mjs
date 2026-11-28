@@ -1,6 +1,6 @@
 // 午後激盪 (games/brainstorm) from its Godot project:
 //
-//   node dev/brainstorm/godot.mjs export    export the web build into games/brainstorm/web
+//   node dev/brainstorm/godot.mjs export    export the web build into games/brainstorm
 //   node dev/brainstorm/godot.mjs server    run its dedicated server on ws://localhost:24242,
 //                                           the one the game uses when the site is opened from localhost
 //
@@ -17,7 +17,7 @@ import {fileURLToPath} from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const GODOT = process.env.GODOT ?? path.join(os.homedir(), "Desktop/danStuff/Godot/Godot.app/Contents/MacOS/Godot");
 const PROJECT = process.env.PROJECT ?? path.join(os.homedir(), "Desktop/afternoon-brainstorm");
-const WEB = path.join(root, "games/brainstorm/web");
+const WEB = path.join(root, "games/brainstorm");
 const PORT = Number(process.env.PORT ?? 24242);
 
 const command = process.argv[2];
@@ -62,7 +62,7 @@ function exportWeb(){
 
         const size = fs.statSync(path.join(WEB, name)).size;
 
-        console.log(`${(size / 1e6).toFixed(2).padStart(8)} MB  games/brainstorm/web/${name}`);
+        console.log(`${(size / 1e6).toFixed(2).padStart(8)} MB  games/brainstorm/${name}`);
 
     }
 

@@ -50,7 +50,8 @@ const GAMES = [
 
 
     {
-        name:"brainstorm",
+        name:"brainstorm-card",
+        title:"午後激盪",
         full:true,
         order:3
     }
@@ -90,12 +91,6 @@ async function init(){
         );
 
 
-    const loading =
-        document.querySelector(
-            "#games-loading"
-        );
-
-
     const wrapper =
         document.querySelector(
             "#games-wrapper"
@@ -114,74 +109,17 @@ async function init(){
         );
 
 
-    try{
+    await Promise.all(
+        GAMES.map(game => loadGame(game, columns, fullContainer))
+    );
 
-        const gamePromises =
-            GAMES.map(
-                game =>
-                    loadGame(
-                        game,
-                        columns,
-                        fullContainer
-                    )
-            );
+    games.classList.remove("loading");
+    wrapper.classList.add("ready");
 
+    document.addEventListener("pointerdown", onPointerDown);
 
-        await Promise.all(
-            gamePromises
-        );
-
-
-        games.classList.remove(
-            "loading"
-        );
-
-
-        wrapper.classList.add(
-            "ready"
-        );
-
-
-        document.addEventListener(
-            "pointerdown",
-            onPointerDown
-        );
-
-
-        for(const type of ["fullscreenchange", "webkitfullscreenchange"]){
-
-            document.addEventListener(
-                type,
-                updateFullscreenButtons
-            );
-
-        }
-
-
-    }
-
-    catch(error){
-
-        console.error(
-            "Failed to load games:",
-            error
-        );
-
-
-        games.classList.remove(
-            "loading"
-        );
-
-
-        wrapper.classList.add(
-            "error"
-        );
-
-
-        loading.textContent =
-            "Failed to load games.";
-
-    }
+    for(const type of ["fullscreenchange", "webkitfullscreenchange"])
+        document.addEventListener(type, updateFullscreenButtons);
 
 }
 
@@ -246,6 +184,28 @@ async function loadGame(
         gameContainer
     );
 
+
+    try{
+
+        await mountGame(name, gameContainer);
+        addFullscreenButton(gameContainer);
+
+    }
+    catch(error){
+
+        console.error(`Failed to load ${name}:`, error);
+
+        const message = document.createElement("p");
+        message.className = "game-load-error";
+        message.textContent = `${game.title ?? name} could not load.`;
+        gameContainer.replaceChildren(message);
+
+    }
+
+}
+
+
+async function mountGame(name, gameContainer){
 
     const gameRoot =
         new URL(
@@ -313,12 +273,7 @@ async function loadGame(
     }
 
 
-    gameModule.init(
-        gameContainer
-    );
-
-
-    addFullscreenButton(
+    await gameModule.init(
         gameContainer
     );
 

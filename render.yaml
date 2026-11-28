@@ -31,4 +31,4 @@ services:
     buildFilter:
       paths:
         - server/brainstorm/**
-        - games/brainstorm/web/index.pck
+        - games/brainstorm/index.pck
